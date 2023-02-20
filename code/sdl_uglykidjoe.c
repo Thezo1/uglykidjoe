@@ -3,6 +3,7 @@
 #include<sys/mman.h>
 #include<math.h>
 #include<SDL2/SDL.h>
+#include<x86intrin.h>
 
 #define global_variable static
 #define MAX_CONTROLLERS 4
@@ -85,6 +86,8 @@ int main(int argc, char *argv[])
         // TODO:(zourt) SDL did not init
     }
 
+    uint64 perf_count_frequency = SDL_GetPerformanceFrequency();
+
     // Initialise game controllers
     SDL_OpenGameController();
 
@@ -110,6 +113,10 @@ int main(int argc, char *argv[])
     result = SDL_GetWindowDimension(window);
     SDL_ResizeTexture(&global_back_buffer, renderer, result.width, result.heigth);
 
+    // Test Graphics
+    int x_offset = 0;
+    int y_offset = 0;
+
     // NOTE: Test sound
     SDL_SoundOutput sound_output = {};
 
@@ -126,8 +133,8 @@ int main(int argc, char *argv[])
     sdl_fill_sound_buffer(&sound_output, 0, sound_output.bytes_per_sample);
     SDL_PauseAudio(0);
 
-    int x_offset = 0;
-    int y_offset = 0;
+    uint64 last_cycle_count = _rdtsc();
+    uint64 last_counter = SDL_GetPerformanceCounter();
     while(running)
     {
         SDL_Event event;
@@ -198,6 +205,23 @@ int main(int argc, char *argv[])
 
         SDL_UpdateWindow(global_back_buffer, window, renderer);
         ++x_offset;
+
+        uint64 end_cycle_count = _rdtsc();
+
+        uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
+        uint64 end_counter = SDL_GetPerformanceCounter();
+        int64 counter_elapsed = end_counter - last_counter;
+        int64 ms_per_frame = (1000 * (real64)counter_elapsed) / (real64)perf_count_frequency;
+        int64 fps = (real64)perf_count_frequency / (real64)counter_elapsed;
+
+        real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
+
+        // char buffer[256];
+        // sprintf(buffer, "%loms at %lofps\n", ms_per_frame, fps);
+        printf("%loms/f at %lofps, %fmc/f\n", ms_per_frame, fps, mcpf);
+
+        last_counter = end_counter;
+        last_cycle_count = end_cycle_count;
     }
 
     SDL_CloseCotroller();
