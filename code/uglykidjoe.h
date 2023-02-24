@@ -1,6 +1,29 @@
 #ifndef _UGLYKIDJOE_H_
 #define _UGLYKIDJOE_H_
 
+/*
+    NOTE:
+    UGLYKIDJOE_INTERNAL
+    0-public
+    1-private
+
+    NOTE:
+    UGLYKIDJOE_SLOW
+    0- no slow
+    1- slow
+*/
+
+#if UGLYKIDJOE_SLOW
+#define Assert(Expression) if(!(Expression)) {*(int *)0 = 0;}
+#else
+#define Assert(Expression)
+#endif
+
+#define KiloBytes(value) ((value)*1024LL)
+#define MegaBytes(value) (KiloBytes(value)*1024LL)
+#define GigaBytes(value) (MegaBytes(value)*1024LL)
+#define TeraBytes(value) (GigaBytes(value)*1024LL)
+
 typedef struct GameOffScreenBuffer
 {
     void *memory;
@@ -58,6 +81,24 @@ typedef struct GameInput
     GameControllerInput controllers[4];
 }GameInput;
 
-void GameUpdateAndRender(GameInput *input, GameOffScreenBuffer *buffer, GameSoundOutputBuffer *sound_buffer);
+typedef struct GameState
+{
+    int tone_hz;
+    int green_offset;
+    int blue_offset;
+}GameState;
+
+typedef struct GameMemory
+{
+    bool is_initialized;
+
+    uint64 permanent_storage_size;
+    void *permanent_storage; // NOTE: cleared to zero
+
+    uint64 transient_storage_size;
+    void *transient_storage; // NOTE: cleared too zero
+}GameMemory;
+
+void GameUpdateAndRender(GameMemory *memory, GameInput *input, GameOffScreenBuffer *buffer, GameSoundOutputBuffer *sound_buffer);
 
 #endif

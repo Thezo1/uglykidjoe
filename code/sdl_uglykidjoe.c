@@ -7,6 +7,8 @@
 
 #define global_variable static
 #define local_persist static
+#define internal static
+
 #define MAX_CONTROLLERS 4
 #define Pi32 3.14159265358979f
 
@@ -33,7 +35,7 @@ SDL_GameController *controller_handles[MAX_CONTROLLERS];
 SDL_Haptic *rumble_handles[MAX_CONTROLLERS];
 RingBuffer audio_ring_buffer;
 
-static void SDL_UpdateWindow(SDL_OffScreenBuffer buffer, SDL_Window *Window, SDL_Renderer *renderer)
+internal void SDL_UpdateWindow(SDL_OffScreenBuffer buffer, SDL_Window *Window, SDL_Renderer *renderer)
 {
     SDL_UpdateTexture(buffer.texture,
                       NULL,
@@ -164,7 +166,7 @@ bool handle_event(SDL_Event *event)
     return should_quit;
 }
 
-static void SDL_ResizeTexture(SDL_OffScreenBuffer *buffer, SDL_Renderer *renderer, int width, int height)
+internal void SDL_ResizeTexture(SDL_OffScreenBuffer *buffer, SDL_Renderer *renderer, int width, int height)
 {
     int bytes_per_pixel = 4;
     if(buffer->memory)
@@ -208,7 +210,7 @@ static void SDL_ResizeTexture(SDL_OffScreenBuffer *buffer, SDL_Renderer *rendere
 }
 
 
-static SDL_WindowDimensionResult SDL_GetWindowDimension(SDL_Window *window)
+internal SDL_WindowDimensionResult SDL_GetWindowDimension(SDL_Window *window)
 {
     SDL_WindowDimensionResult result;
 
@@ -217,7 +219,7 @@ static SDL_WindowDimensionResult SDL_GetWindowDimension(SDL_Window *window)
     return result;
 }
 
-static void SDL_OpenGameController()
+internal void SDL_OpenGameController()
 {
     int max_joysticks = SDL_NumJoysticks();
     int controller_index = 0;
@@ -245,7 +247,7 @@ static void SDL_OpenGameController()
     }
 }
 
-static void SDLAudioCallback(void *user_data, uint8 *audio_data, int length)
+internal void SDLAudioCallback(void *user_data, uint8 *audio_data, int length)
 {
     RingBuffer *audio_ring_buffer = (RingBuffer *)user_data;
     int region1_size = length;
@@ -264,7 +266,7 @@ static void SDLAudioCallback(void *user_data, uint8 *audio_data, int length)
     audio_ring_buffer->write_cursor = (audio_ring_buffer->play_cursor + length) % audio_ring_buffer->size;
 }
 
-static void SDL_InitAudio(int32 samples_per_second, int32 buffer_size)
+internal void SDL_InitAudio(int32 samples_per_second, int32 buffer_size)
 {
     SDL_AudioSpec audio_settings = {0};
 
@@ -293,7 +295,7 @@ static void SDL_InitAudio(int32 samples_per_second, int32 buffer_size)
     SDL_PauseAudio(0);
 }
 
-static void SDL_CloseCotroller()
+internal void SDL_CloseCotroller()
 {
     for(int controller_index = 0;controller_index<MAX_CONTROLLERS;controller_index++)
     {
@@ -344,7 +346,7 @@ void sdl_fill_sound_buffer(SDL_SoundOutput *sound_output, int byte_to_lock, int 
     }
 }
 
-static void SDLProcessGameController(GameButtonState *old_state,
+internal void SDLProcessGameController(GameButtonState *old_state,
                                      GameButtonState *new_state,
                                      SDL_GameController *controller_handle,
                                      SDL_GameControllerButton button
@@ -410,17 +412,38 @@ int main(int argc, char *argv[])
     int16 *samples = (int16 *)calloc(sound_output.samples_per_second, sound_output.bytes_per_sample);
     SDL_PauseAudio(0);
 
+#if UGLYKIDJOE_INTERNAL
+    void *base_address = (void *)TeraBytes(2);
+#else
+    void *base_address = (void *)(0);
+#endif
+    GameMemory game_memory = {};
+    game_memory.permanent_storage_size = MegaBytes(64);
+    game_memory.transient_storage_size = GigaBytes(4);
+    uint64 total_storage_size = game_memory.permanent_storage_size + game_memory.transient_storage_size;
+
+    game_memory.permanent_storage = mmap(base_address, 
+                                         total_storage_size,
+                                         PROT_READ | PROT_WRITE, 
+                                         MAP_ANON | MAP_PRIVATE, 
+                                         -1, 0);
+    game_memory.transient_storage = (uint8 *)(game_memory.permanent_storage) + game_memory.transient_storage_size;
+
+    if (game_memory.permanent_storage == NULL && samples == NULL)
+    {
+        // TOD0(zourt): do something
+    }
+
     uint64 last_cycle_count = _rdtsc();
     uint64 last_counter = SDL_GetPerformanceCounter();
     while(running)
     {
         SDL_Event event;
-        while(SDL_PollEvent(&event))
+        SDL_PollEvent(&event);
+
+        if(handle_event(&event))
         {
-            if(handle_event(&event))
-            {
-                running = false;
-            }
+            running = false;
         }
 
         for(int controller_index = 0;
@@ -535,8 +558,7 @@ int main(int argc, char *argv[])
         buffer.heigth = global_back_buffer.heigth;
         buffer.pitch = global_back_buffer.pitch;
 
-
-        GameUpdateAndRender(new_input, &buffer, &sound_buffer);
+        GameUpdateAndRender(&game_memory, new_input, &buffer, &sound_buffer);
 
         sdl_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
 
