@@ -62,20 +62,36 @@ void GameUpdateAndRender(GameMemory *memory, GameInput *input, GameOffScreenBuff
         memory->is_initialized = true;
     }
 
-    GameControllerInput *input0 = &input->controllers[0];
-    if(input0->is_analog)
+    for(int controller_index = 0;
+        controller_index < ArrayCount(input->controllers);
+        ++controller_index)
     {
-        game_state->tone_hz = 256 + (int)(128.0f *(input0->end_x));
-        game_state->blue_offset += (int)4.0f*(input0->end_y);
-    }
-    else
-    {
+        GameControllerInput *controller = &input->controllers[controller_index];
+        if(controller->is_analog)
+        {
+            game_state->tone_hz = 256 + (int)(128.0f *(controller->stick_average_x));
+            game_state->blue_offset += (int)4.0f*(controller->stick_average_y);
+        }
+        else
+        {
+        }
+
+        if(controller->move_down.ended_down)
+        {
+            game_state->green_offset += 1;
+        }
+
+        if(controller->move_left.ended_down)
+        {
+            game_state->blue_offset -= 1;
+        }
+
+        if(controller->move_right.ended_down)
+        {
+            game_state->blue_offset += 1;
+        }
     }
 
-    if(input0->down.ended_down)
-    {
-        game_state->green_offset += 1;
-    }
 
     game_output_sound(sound_buffer);
     render_gradient(buffer, game_state->blue_offset, game_state->green_offset);

@@ -36,7 +36,7 @@
 #define GigaBytes(value) (MegaBytes(value)*1024LL)
 #define TeraBytes(value) (GigaBytes(value)*1024LL)
 
-#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]));
+#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]))
 
 typedef struct GameOffScreenBuffer
 {
@@ -62,38 +62,45 @@ typedef struct GameButtonState
 typedef struct GameControllerInput
 {
     bool is_analog;
-
-    real32 start_x;
-    real32 start_y;
-
-    real32 min_x;
-    real32 min_y;
-
-    real32 max_x;
-    real32 max_y;
-
-    real32 end_x;
-    real32 end_y;
+    bool is_connected;
+    real32 stick_average_x;
+    real32 stick_average_y;
 
     union
     {
-        GameButtonState buttons[6];
+        GameButtonState buttons[10];
         struct
         {
-            GameButtonState up;
-            GameButtonState down;
-            GameButtonState left;
-            GameButtonState right;
+            GameButtonState move_up;
+            GameButtonState move_down;
+            GameButtonState move_left;
+            GameButtonState move_right;
+
+            GameButtonState action_up;
+            GameButtonState action_down;
+            GameButtonState action_left;
+            GameButtonState action_right;
+
             GameButtonState left_shoulder;
             GameButtonState right_shoulder;
+
+            GameButtonState start;
+            GameButtonState back;
         };
     };
 }GameControllerInput;
 
 typedef struct GameInput
 {
-    GameControllerInput controllers[4];
+    GameControllerInput controllers[5];
 }GameInput;
+
+extern inline GameControllerInput *get_controller(GameInput *input, int controller_index)
+{
+    Assert(controller_index < ArrayCount(input->controllers));
+    GameControllerInput *result = &input->controllers[controller_index];
+    return result;
+ }
 
 typedef struct GameState
 {
