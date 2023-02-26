@@ -4,6 +4,9 @@
 #include<math.h>
 #include<SDL2/SDL.h>
 #include<x86intrin.h>
+#include<fcntl.h>
+#include<unistd.h>
+#include<sys/stat.h>
 
 #define global_variable static
 #define local_persist static
@@ -357,6 +360,93 @@ internal void SDLProcessGameController(GameButtonState *old_state,
         (new_state->ended_down == old_state->ended_down) ? 1 : 0;
 }
 
+internal inline uint32 SafeTruncateUint64(uint64 value)
+{
+    Assert(value <= 0xFFFFFFFF);
+    uint32 result = (uint32)value;
+    return(result);
+}
+
+internal DEBUG_ReadFileResult DEBUGPlatformReadEntireFile(char *filename)
+{
+    DEBUG_ReadFileResult result = {};
+    int FILE = open(filename, O_RDONLY);
+    if(FILE == -1)
+    {
+        return result;
+    }
+
+    struct stat file_status;
+    if(fstat(FILE, &file_status) == -1)
+    {
+        close(FILE);
+        return result;
+    }
+    result.content_size = SafeTruncateUint64(file_status.st_size);
+    
+    result.contents = malloc(result.content_size);
+    if(!result.contents)
+    {
+        close(FILE);
+        result.content_size = 0;
+        result.contents = 0;
+        return result;
+    }
+
+    uint32 bytes_to_read = result.content_size;
+    uint8 *next_byte_location = (uint8 *)result.contents;
+    while(bytes_to_read)
+    {
+        uint32 bytes_read = read(FILE, next_byte_location, bytes_to_read);
+        if(bytes_read == -1)
+        {
+            free(result.contents);
+            result.content_size = 0;
+            result.contents = 0;
+            close(FILE);
+            return result;
+        }
+        bytes_to_read -= bytes_read;
+        next_byte_location += bytes_read;
+    }
+
+    close(FILE);
+    return result;
+}
+
+internal void DEBUGPlatormFreeFileMemory(void *memory)
+{
+    free(memory);
+}
+
+internal bool DEBUGPlatformWriteEntireFile(char *filename, uint64 memory_size, void *memory)
+{
+int FILE = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); 
+    if(!FILE)
+    {
+        return false;
+    }
+
+    uint32 bytes_to_write = memory_size;
+    uint8 *next_byte_location = (uint8 *)memory;
+    while(bytes_to_write)
+    {
+        uint32 bytes_written = write(FILE, next_byte_location, bytes_to_write);
+        if(bytes_written == -1)
+        {
+            free(memory);
+            memory = 0;
+            close(FILE);
+            return false;
+        }
+        bytes_to_write -= bytes_written;
+        next_byte_location += bytes_written;
+    }
+
+    close(FILE);
+    return true;
+}
+
 int main(int argc, char *argv[])
 {
     SDL_Window *window;
@@ -575,7 +665,7 @@ int main(int argc, char *argv[])
 
         // char buffer[256];
         // sprintf(buffer, "%loms at %lofps\n", ms_per_frame, fps);
-        printf("%loms/f at %lofps, %fmc/f\n", ms_per_frame, fps, mcpf);
+        printf("%jdms/f at %jdfps, %fmc/f\n", ms_per_frame, fps, mcpf);
 
         last_counter = end_counter;
         last_cycle_count = end_cycle_count;

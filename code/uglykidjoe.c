@@ -48,6 +48,16 @@ void GameUpdateAndRender(GameMemory *memory, GameInput *input, GameOffScreenBuff
     GameState *game_state = (GameState *)memory->permanent_storage;
     if(!memory->is_initialized)
     {
+        char *filename = __FILE__;
+
+        DEBUG_ReadFileResult result = DEBUGPlatformReadEntireFile(filename);
+        void *file_memory = result.contents;
+        if(file_memory)
+        {
+            DEBUGPlatformWriteEntireFile("data/test.out", result.content_size, result.contents);
+            DEBUGPlatormFreeFileMemory(file_memory);
+        }
+
         game_state->tone_hz = 256;
         memory->is_initialized = true;
     }

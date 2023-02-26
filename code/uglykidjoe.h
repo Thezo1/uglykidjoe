@@ -13,6 +13,18 @@
     1- slow
 */
 
+#if UGLYKIDJOE_INTERNAL
+    typedef struct DEBUG_ReadFileResult
+    {
+        uint32 content_size;
+        void *contents;
+    }DEBUG_ReadFileResult;
+
+    internal DEBUG_ReadFileResult DEBUGPlatformReadEntireFile(char *filename);
+    internal void DEBUGPlatormFreeFileMemory(void *memory);
+    internal bool DEBUGPlatformWriteEntireFile(char *filename, uint64 memory_size, void *memory);
+#endif
+
 #if UGLYKIDJOE_SLOW
 #define Assert(Expression) if(!(Expression)) {*(int *)0 = 0;}
 #else
@@ -23,6 +35,8 @@
 #define MegaBytes(value) (KiloBytes(value)*1024LL)
 #define GigaBytes(value) (MegaBytes(value)*1024LL)
 #define TeraBytes(value) (GigaBytes(value)*1024LL)
+
+#define ArrayCount(Array) (sizeof(Array) / sizeof((Array)[0]));
 
 typedef struct GameOffScreenBuffer
 {
