@@ -34,6 +34,8 @@ typedef  double real64;
 #include "sdl_uglykidjoe.h"
 
 global_variable SDL_OffScreenBuffer global_back_buffer;
+global_variable int64 global_perf_count_frequency;
+
 SDL_GameController *controller_handles[MAX_CONTROLLERS];
 SDL_Haptic *rumble_handles[MAX_CONTROLLERS];
 RingBuffer audio_ring_buffer;
@@ -465,6 +467,36 @@ int FILE = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IR
     return true;
 }
 
+internal int SDLGetWindowRefreshRate(SDL_Window *window)
+{
+    SDL_DisplayMode mode;
+    int display_index = SDL_GetWindowDisplayIndex(window);
+    
+    // NOTE(me): cause for some reason can return 0
+    int default_refresh_rate = 60;
+    if(SDL_GetDesktopDisplayMode(display_index, &mode) != 0)
+    {
+        return (default_refresh_rate);
+    }
+    if(mode.refresh_rate == 0)
+    {
+        return (default_refresh_rate);
+    }
+
+    return (mode.refresh_rate);
+}
+
+internal inline uint64 SDL_GetWallClock()
+{
+    uint64 result = SDL_GetPerformanceCounter();
+    return (result);
+}
+
+internal inline real32 SDL_GetSecondsElapsed(uint64 old_counter, uint64 current_counter)
+{
+    return ((real32)(current_counter - old_counter) / (real32)(SDL_GetPerformanceFrequency()));
+}
+
 int main(int argc, char *argv[])
 {
     SDL_Window *window;
@@ -491,11 +523,15 @@ int main(int argc, char *argv[])
         exit(1);
     }
 
-    renderer = SDL_CreateRenderer(window, -1, 0);
+    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
     if(renderer == NULL)
     {
         exit(1);
     }
+
+    // int monitor_refresh_rate = SDLGetWindowRefreshRate(window);
+    int game_update_hz = 30; // monitor_refresh_rate / 2;
+    real32 target_seconds_per_frame = 1.0f / (real32)game_update_hz;
 
     bool running = true;
     SDL_WindowDimensionResult result;
@@ -542,8 +578,8 @@ int main(int argc, char *argv[])
         // TOD0(zourt): do something
     }
 
+    uint64 last_counter = SDL_GetWallClock();
     uint64 last_cycle_count = _rdtsc();
-    uint64 last_counter = SDL_GetPerformanceCounter();
     while(running)
     {
         GameControllerInput *old_keyboard_controller = get_controller(old_input, 0);
@@ -698,25 +734,44 @@ int main(int argc, char *argv[])
 
         sdl_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
 
-        SDL_UpdateWindow(global_back_buffer, window, renderer);
+        if(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
+        {
+            uint32 time_to_sleep = ((target_seconds_per_frame - SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter())) * 1000);
+            if(time_to_sleep > 0)
+            {
+                SDL_Delay(time_to_sleep);
+            }
 
-        uint64 end_cycle_count = _rdtsc();
-        uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
-        uint64 end_counter = SDL_GetPerformanceCounter();
-        int64 counter_elapsed = end_counter - last_counter;
-        int64 ms_per_frame = (1000 * (real64)counter_elapsed) / (real64)perf_count_frequency;
-        int64 fps = (real64)perf_count_frequency / (real64)counter_elapsed;
-
-        real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
-
-        // printf("%jdms/f at %jdfps, %fmc/f\n", ms_per_frame, fps, mcpf);
-
-        last_counter = end_counter;
-        last_cycle_count = end_cycle_count;
+            Assert(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter() < target_seconds_per_frame));
+            while(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
+            {
+                // wait...
+            }
+        }
+        else
+        {
+        }
 
         GameInput *temp = new_input;
         new_input = old_input;
         old_input = temp;
+
+        // NOTE(me): try to double check types before typing
+        uint64 end_counter = SDL_GetPerformanceCounter();
+        SDL_UpdateWindow(global_back_buffer, window, renderer);
+
+        uint64 end_cycle_count = _rdtsc();
+        uint64 counter_elapsed = end_counter - last_counter;
+        uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
+
+        real64 ms_per_frame = (((1000.0f * (real64)counter_elapsed) / (real64)perf_count_frequency));
+        real64 fps = 0.0f;
+        real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
+
+        printf("%fms/f at %ffps, %fmc/f\n", ms_per_frame, fps, mcpf);  
+
+        last_cycle_count = end_cycle_count;
+        last_counter = end_counter;
     }
 
     SDL_CloseCotroller();
