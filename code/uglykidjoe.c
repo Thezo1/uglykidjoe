@@ -37,6 +37,7 @@ static void game_output_sound(GameSoundOutputBuffer *sound_buffer)
         int16 sample_value = (int16)(sine_value * tone_volume);
         *sample_out++ = sample_value;
         *sample_out++ = sample_value;
+
         tsine += 2.0f*Pi32*1.0f/(real32)wave_period;
     }
 }

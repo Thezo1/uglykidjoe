@@ -10,6 +10,7 @@ typedef struct SDL_OffScreenBuffer
     int width;
     int heigth;
     int pitch;
+    int bytes_per_pixel;
 } SDL_OffScreenBuffer;
 
 typedef struct SDL_WindowDimensionResult
@@ -32,6 +33,14 @@ typedef struct SDL_SoundOutput
     uint32 running_sample_index;
     int bytes_per_sample;
     int secondary_buffer_size;
+    int latency_sample_count;
     
-} SDL_SoundOutput;
+}SDL_SoundOutput;
+
+typedef struct DebugTimeMarker
+{
+    int play_cursor;
+    int write_cursor;
+}DebugTimeMarker;
+
 #endif

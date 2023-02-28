@@ -14,6 +14,7 @@
 
 #define MAX_CONTROLLERS 4
 #define Pi32 3.14159265358979f
+#define FramesOfAudioLatency 2 
 
 typedef int8_t int8;
 typedef int16_t int16;
@@ -203,6 +204,7 @@ bool handle_event(SDL_Event *event, GameControllerInput *new_keyboard_controller
 internal void SDL_ResizeTexture(SDL_OffScreenBuffer *buffer, SDL_Renderer *renderer, int width, int height)
 {
     int bytes_per_pixel = 4;
+    buffer->bytes_per_pixel = bytes_per_pixel;
     if(buffer->memory)
     {
         // NOTE:(zourt) for some reason this (munmap) dumps when window is resized
@@ -295,7 +297,6 @@ internal void SDLAudioCallback(void *user_data, uint8 *audio_data, int length)
     memcpy(audio_data, (uint8 *)(audio_ring_buffer->data) + audio_ring_buffer->play_cursor, region1_size);
     memcpy(&audio_data[region1_size], audio_ring_buffer->data, region2_size);
 
-    // NOTE:(zourt) 2048 is the size of sdl's audio buffer in bytes
     audio_ring_buffer->play_cursor = (audio_ring_buffer->play_cursor + length) % audio_ring_buffer->size;
     audio_ring_buffer->write_cursor = (audio_ring_buffer->play_cursor + length) % audio_ring_buffer->size;
 }
@@ -308,13 +309,16 @@ internal void SDL_InitAudio(int32 samples_per_second, int32 buffer_size)
     audio_settings.format = AUDIO_S16LSB;
     audio_settings.channels = 2;
 
-    audio_settings.samples = buffer_size / audio_settings.channels;
+    // NOTE:(me) 512 gives a lower latency
+    audio_settings.samples = 512;
+    printf("buffer size = %i\n", buffer_size);
     audio_settings.callback = &SDLAudioCallback;
     audio_settings.userdata = &audio_ring_buffer;
 
     audio_ring_buffer.size = buffer_size;
     audio_ring_buffer.data = calloc(buffer_size, 1);
-    audio_ring_buffer.play_cursor = audio_ring_buffer.write_cursor = 0;
+    audio_ring_buffer.play_cursor = 0;
+    audio_ring_buffer.write_cursor = 0;
 
     SDL_OpenAudio(&audio_settings, 0);
     printf("Initialised an Audio device at frequency %d Hz, %d Channels\n",
@@ -496,6 +500,48 @@ internal inline real32 SDL_GetSecondsElapsed(uint64 old_counter, uint64 current_
 {
     return ((real32)(current_counter - old_counter) / (real32)(SDL_GetPerformanceFrequency()));
 }
+internal void SDL_DebugDrawVertical(SDL_OffScreenBuffer *global_back_buffer, int x, int top, int bottom, uint32 color)
+{
+    uint8* pixel = ((uint8*)((global_back_buffer->memory) + (x*global_back_buffer->bytes_per_pixel) + (top*global_back_buffer->pitch)));
+    for(int y = top; y < bottom;++y)
+    {
+        *(uint32*)pixel = color;
+        pixel += global_back_buffer->pitch;
+    }
+}
+
+internal void SDL_DrawSoundBufferMarker(SDL_OffScreenBuffer *back_buffer, 
+                                        SDL_SoundOutput *sound_output, 
+                                        real32 c, int pad_x, 
+                                        int top, int bottom, int value, uint32 color)
+{
+        Assert(value < sound_output->secondary_buffer_size);
+        int x = pad_x + (int)(c * (real32)value);
+        SDL_DebugDrawVertical(back_buffer, x, top, bottom, color);
+}
+
+internal void SDL_DebugSyncDisplay(SDL_OffScreenBuffer *back_buffer, 
+                                   int marker_count,
+                                   DebugTimeMarker *markers, 
+                                   SDL_SoundOutput *sound_output,
+                                   real32 target_seconds_per_frame)
+{
+    int pad_x = 16;
+    int pad_y = 16;
+
+    int top = pad_y;
+    int bottom = back_buffer->heigth - pad_y;
+
+    real32 c = (back_buffer->width - 2*pad_x) / (real32)sound_output->secondary_buffer_size;
+    for(int marker_index = 0;
+        marker_index < marker_count;
+        ++marker_index)
+    {
+        DebugTimeMarker *this_marker = &markers[marker_index];
+        SDL_DrawSoundBufferMarker(back_buffer, sound_output, c, pad_x, top, bottom, this_marker->play_cursor, 0xFFFFFF);
+        SDL_DrawSoundBufferMarker(back_buffer, sound_output, c, pad_x, top, bottom, this_marker->write_cursor, 0xFF0000);
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -518,260 +564,296 @@ int main(int argc, char *argv[])
                               640, 
                               640, 
                               SDL_WINDOW_RESIZABLE);
-    if(window == NULL)
+    if(window)
     {
-        exit(1);
-    }
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
+        if(renderer)
+        {
 
-    renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
-    if(renderer == NULL)
-    {
-        exit(1);
-    }
+            int monitor_refresh_rate = SDLGetWindowRefreshRate(window);
+            printf("Refresh rate is %d Hz\n", monitor_refresh_rate);
 
-    // int monitor_refresh_rate = SDLGetWindowRefreshRate(window);
-    int game_update_hz = 30; // monitor_refresh_rate / 2;
-    real32 target_seconds_per_frame = 1.0f / (real32)game_update_hz;
+            // TODO(me): forces game to update at 30hz try not to hard code the figure
+            int game_update_hz = 30;
+            real32 target_seconds_per_frame = 1.0f / (real32)game_update_hz;
 
-    bool running = true;
-    SDL_WindowDimensionResult result;
-    result = SDL_GetWindowDimension(window);
-    SDL_ResizeTexture(&global_back_buffer, renderer, result.width, result.heigth);
-    
-    GameInput input[2] = {};
-    GameInput *new_input = &input[0];
-    GameInput *old_input = &input[1];
-    
-    // NOTE: Test sound
-    SDL_SoundOutput sound_output = {};
+            bool running = true;
+            SDL_WindowDimensionResult result;
+            result = SDL_GetWindowDimension(window);
+            SDL_ResizeTexture(&global_back_buffer, renderer, result.width, result.heigth);
+            
+            GameInput input[2] = {};
+            GameInput *new_input = &input[0];
+            GameInput *old_input = &input[1];
+            
+            // NOTE: Test sound
+            SDL_SoundOutput sound_output = {};
 
-    sound_output.samples_per_second = 48000;
-    sound_output.running_sample_index = 0;
-    sound_output.bytes_per_sample = sizeof(int16) * 2;
-    sound_output.secondary_buffer_size = sound_output.samples_per_second * sound_output.bytes_per_sample;
+            sound_output.samples_per_second = 48000;
+            sound_output.running_sample_index = 0;
+            sound_output.bytes_per_sample = sizeof(int16) * 2;
+            sound_output.secondary_buffer_size = sound_output.samples_per_second * sound_output.bytes_per_sample;
+            sound_output.latency_sample_count = FramesOfAudioLatency*(sound_output.samples_per_second / game_update_hz);
 
-    // NOTE: Open audio device
-    SDL_InitAudio(48000, sound_output.secondary_buffer_size);
+            // NOTE: Open audio device
+            SDL_InitAudio(48000, sound_output.secondary_buffer_size);
 
-    int16 *samples = (int16 *)calloc(sound_output.samples_per_second, sound_output.bytes_per_sample);
-    SDL_PauseAudio(0);
+            int16 *samples = (int16 *)calloc(sound_output.samples_per_second, sound_output.bytes_per_sample);
+            SDL_PauseAudio(0);
 
 #if UGLYKIDJOE_INTERNAL
-    void *base_address = (void *)TeraBytes(2);
+            void *base_address = (void *)TeraBytes(2);
 #else
-    void *base_address = (void *)(0);
+            void *base_address = (void *)(0);
 #endif
-    GameMemory game_memory = {};
-    game_memory.permanent_storage_size = MegaBytes(64);
-    game_memory.transient_storage_size = GigaBytes(4);
-    uint64 total_storage_size = game_memory.permanent_storage_size + game_memory.transient_storage_size;
+            GameMemory game_memory = {};
+            game_memory.permanent_storage_size = MegaBytes(64);
+            game_memory.transient_storage_size = GigaBytes(4);
+            uint64 total_storage_size = game_memory.permanent_storage_size + game_memory.transient_storage_size;
 
-    game_memory.permanent_storage = mmap(base_address, 
-                                         total_storage_size,
-                                         PROT_READ | PROT_WRITE, 
-                                         MAP_ANON | MAP_PRIVATE, 
-                                         -1, 0);
-    game_memory.transient_storage = (uint8 *)(game_memory.permanent_storage) + game_memory.transient_storage_size;
+            game_memory.permanent_storage = mmap(base_address, 
+                                                 total_storage_size,
+                                                 PROT_READ | PROT_WRITE, 
+                                                 MAP_ANON | MAP_PRIVATE, 
+                                                 -1, 0);
+            Assert(game_memory.permanent_storage);
 
-    if (game_memory.permanent_storage == NULL && samples == NULL)
-    {
-        // TOD0(zourt): do something
-    }
+            game_memory.transient_storage = (uint8 *)(game_memory.permanent_storage) + game_memory.transient_storage_size;
 
-    uint64 last_counter = SDL_GetWallClock();
-    uint64 last_cycle_count = _rdtsc();
-    while(running)
-    {
-        GameControllerInput *old_keyboard_controller = get_controller(old_input, 0);
-        GameControllerInput *new_keyboard_controller = get_controller(new_input, 0);
-        GameControllerInput zero_controller = {};
-        *new_keyboard_controller = zero_controller;
-        for(int button_index = 0;
-            button_index < ArrayCount(new_keyboard_controller->buttons);
-            button_index++)
-        {
-            new_keyboard_controller->buttons[button_index].ended_down = 
-            old_keyboard_controller->buttons[button_index].ended_down; 
-        }
-
-        SDL_Event event;
-        while(SDL_PollEvent(&event))
-        {
-            if(handle_event(&event, new_keyboard_controller))
+            if (samples && game_memory.permanent_storage && game_memory.transient_storage)
             {
-                running = false;
+                uint64 last_counter = SDL_GetPerformanceCounter();
+                uint64 last_cycle_count = _rdtsc();
+
+                int debug_time_marker_index = 0;
+                DebugTimeMarker debug_time_markers[30/2] = {0};
+                int last_play_cursor = 0;
+                while(running)
+                {
+                    GameControllerInput *old_keyboard_controller = get_controller(old_input, 0);
+                    GameControllerInput *new_keyboard_controller = get_controller(new_input, 0);
+                    GameControllerInput zero_controller = {};
+                    *new_keyboard_controller = zero_controller;
+                    for(int button_index = 0;
+                        button_index < ArrayCount(new_keyboard_controller->buttons);
+                        button_index++)
+                    {
+                        new_keyboard_controller->buttons[button_index].ended_down = 
+                        old_keyboard_controller->buttons[button_index].ended_down; 
+                    }
+
+                    SDL_Event event;
+                    while(SDL_PollEvent(&event))
+                    {
+                        if(handle_event(&event, new_keyboard_controller))
+                        {
+                            running = false;
+                        }
+                    }
+
+                    for(int controller_index = 0;
+                            controller_index<MAX_CONTROLLERS;
+                            controller_index++)
+                    {
+                        if(controller_handles[controller_index] != 0 && SDL_GameControllerGetAttached(controller_handles[controller_index]))
+                        {
+                            int our_controller_index = controller_index + 1;
+                            GameControllerInput *old_controller = get_controller(old_input, our_controller_index);
+                            GameControllerInput *new_controller = get_controller(new_input, our_controller_index);
+
+                            new_controller->is_connected = true;
+
+                            if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_UP))
+                            {
+                                new_controller->stick_average_y = 1.0f;
+                                new_controller->is_analog = false;
+                            }
+                            if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_DOWN))
+                            {
+                                new_controller->stick_average_y = -1.0f;
+                                new_controller->is_analog = false;
+                            }
+                            if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_LEFT))
+                            {
+                                new_controller->stick_average_x = -1.0f;
+                                new_controller->is_analog = false;
+                            }
+                            if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
+                            {
+                                new_controller->stick_average_x = 1.0f;
+                                new_controller->is_analog = false;
+                            }
+
+                            int16 stick_y = SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTY);
+                            int16 stick_x = SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTX);
+
+                            real32 y = SDLProcessGameControllerAxisValue(SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTY), 1);
+                            real32 x = SDLProcessGameControllerAxisValue(SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTX), 1);
+                            new_controller->stick_average_x = x;
+                            new_controller->stick_average_y = y;
+                            if((new_controller->stick_average_x != 0.0f) || 
+                                        (new_controller->stick_average_y != 0.0f))
+                            {
+                                new_controller->is_analog = true;
+                            }
+
+                            SDLProcessGameControllerButton(&old_controller->left_shoulder, 
+                                                    &new_controller->left_shoulder,
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
+
+                            SDLProcessGameControllerButton(&old_controller->right_shoulder, 
+                                                     &new_controller->right_shoulder, 
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
+
+                            SDLProcessGameControllerButton(&old_controller->action_down, 
+                                                     &new_controller->action_down, 
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_A));
+
+                            SDLProcessGameControllerButton(&old_controller->action_right, 
+                                                     &new_controller->action_right, 
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_B));
+
+                            SDLProcessGameControllerButton(&old_controller->action_left, 
+                                                     &new_controller->action_left, 
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_X));
+
+                            SDLProcessGameControllerButton(&old_controller->action_up, 
+                                                     &new_controller->action_up, 
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_Y));
+
+                            SDLProcessGameControllerButton(&old_controller->start, 
+                                                     &new_controller->start, 
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_START));
+
+                            SDLProcessGameControllerButton(&old_controller->back, 
+                                                     &new_controller->back, 
+                                                    SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_BACK));
+
+                            real32 threshold = 0.5f;
+                            SDLProcessGameControllerButton(&(old_controller->move_left),
+                                                           &(new_controller->move_left),
+                                                           new_controller->stick_average_x < -threshold);
+                            SDLProcessGameControllerButton(&(old_controller->move_right),
+                                                           &(old_controller->move_right),
+                                                           new_controller->stick_average_x > threshold);
+                            SDLProcessGameControllerButton(&(old_controller->move_up),
+                                                           &(new_controller->move_up),
+                                                           new_controller->stick_average_y < -threshold);
+                            SDLProcessGameControllerButton(&(old_controller->move_down),
+                                                           &(new_controller->move_down),
+                                                           new_controller->stick_average_y > threshold);
+
+                        }
+
+                        else
+                        {
+                            //TODO: The contoller is not plugged
+                        }
+                    }
+
+                    SDL_LockAudio();
+                    int byte_to_lock = (sound_output.running_sample_index*sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
+                    int target_cursor = (last_play_cursor+(sound_output.latency_sample_count*sound_output.bytes_per_sample)) % sound_output.secondary_buffer_size;
+
+                    int bytes_to_write;
+                    if(byte_to_lock > target_cursor)
+                    {
+                        bytes_to_write = (sound_output.secondary_buffer_size - byte_to_lock);
+                        bytes_to_write += target_cursor;
+                    }
+                    else
+                    {
+                        bytes_to_write = target_cursor - byte_to_lock;
+                    }
+                    SDL_UnlockAudio();
+
+                    // sound
+                    GameSoundOutputBuffer sound_buffer = {};
+                    sound_buffer.samples_per_second = sound_output.samples_per_second;
+                    sound_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
+                    sound_buffer.samples = samples;
+
+                    // graphics
+                    GameOffScreenBuffer buffer = {};
+                    buffer.memory = global_back_buffer.memory;
+                    buffer.width = global_back_buffer.width;
+                    buffer.heigth = global_back_buffer.heigth;
+                    buffer.pitch = global_back_buffer.pitch;
+
+                    GameUpdateAndRender(&game_memory, new_input, &buffer, &sound_buffer);
+
+                    sdl_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
+
+                    if(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
+                    {
+                        uint32 time_to_sleep = ((target_seconds_per_frame - SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter())) * 1000);
+                        if(time_to_sleep > 0)
+                        {
+                            SDL_Delay(time_to_sleep);
+                        }
+
+                        Assert(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter() < target_seconds_per_frame));
+                        while(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
+                        {
+                            // wait...
+                        }
+                    }
+                    else
+                    {
+                    }
+
+                    uint64 end_counter = SDL_GetPerformanceCounter();
+                    uint64 counter_elapsed = end_counter - last_counter;
+                    real64 ms_per_frame = (((1000.0f * (real64)counter_elapsed) / (real64)perf_count_frequency));
+                    last_counter = end_counter;
+
+#if UGLYKIDJOE_INTERNAL
+                    SDL_DebugSyncDisplay(&global_back_buffer, ArrayCount(debug_time_markers), debug_time_markers, &sound_output, target_seconds_per_frame);
+#endif
+
+                    SDL_UpdateWindow(global_back_buffer, window, renderer);
+                    last_play_cursor = audio_ring_buffer.play_cursor;
+
+#if UGLYKIDJOE_INTERNAL
+                    {
+                        DebugTimeMarker *marker = &debug_time_markers[debug_time_marker_index ++];
+                        marker->play_cursor = audio_ring_buffer.play_cursor;
+                        marker->write_cursor = audio_ring_buffer.write_cursor;
+                        if(debug_time_marker_index > ArrayCount(debug_time_markers))
+                        {
+                            debug_time_marker_index = 0;
+                        }
+                    }
+#endif
+
+                    // NOTE(me): try to double check types before typing
+
+                    GameInput *temp = new_input;
+                    new_input = old_input;
+                    old_input = temp;
+
+                    uint64 end_cycle_count = _rdtsc();
+                    uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
+                    real64 fps = 0.0f;
+                    real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
+
+                    last_cycle_count = end_cycle_count;
+                    printf("%fms/f at %ffps, %fmc/f\n", ms_per_frame, fps, mcpf);  
+                }
             }
-        }
-
-        for(int controller_index = 0;
-                controller_index<MAX_CONTROLLERS;
-                controller_index++)
-        {
-            if(controller_handles[controller_index] != 0 && SDL_GameControllerGetAttached(controller_handles[controller_index]))
-            {
-                int our_controller_index = controller_index + 1;
-                GameControllerInput *old_controller = get_controller(old_input, our_controller_index);
-                GameControllerInput *new_controller = get_controller(new_input, our_controller_index);
-
-                new_controller->is_connected = true;
-
-                if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_UP))
-                {
-                    new_controller->stick_average_y = 1.0f;
-                    new_controller->is_analog = false;
-                }
-                if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_DOWN))
-                {
-                    new_controller->stick_average_y = -1.0f;
-                    new_controller->is_analog = false;
-                }
-                if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_LEFT))
-                {
-                    new_controller->stick_average_x = -1.0f;
-                    new_controller->is_analog = false;
-                }
-                if(SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
-                {
-                    new_controller->stick_average_x = 1.0f;
-                    new_controller->is_analog = false;
-                }
-
-                int16 stick_y = SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTY);
-                int16 stick_x = SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTX);
-
-                real32 y = SDLProcessGameControllerAxisValue(SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTY), 1);
-                real32 x = SDLProcessGameControllerAxisValue(SDL_GameControllerGetAxis(controller_handles[controller_index], SDL_CONTROLLER_AXIS_LEFTX), 1);
-                new_controller->stick_average_x = x;
-                new_controller->stick_average_y = y;
-                if((new_controller->stick_average_x != 0.0f) || 
-                            (new_controller->stick_average_y != 0.0f))
-                {
-                    new_controller->is_analog = true;
-                }
-
-                SDLProcessGameControllerButton(&old_controller->left_shoulder, 
-                                        &new_controller->left_shoulder,
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_LEFTSHOULDER));
-
-                SDLProcessGameControllerButton(&old_controller->right_shoulder, 
-                                         &new_controller->right_shoulder, 
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_RIGHTSHOULDER));
-
-                SDLProcessGameControllerButton(&old_controller->action_down, 
-                                         &new_controller->action_down, 
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_A));
-
-                SDLProcessGameControllerButton(&old_controller->action_right, 
-                                         &new_controller->action_right, 
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_B));
-
-                SDLProcessGameControllerButton(&old_controller->action_left, 
-                                         &new_controller->action_left, 
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_X));
-
-                SDLProcessGameControllerButton(&old_controller->action_up, 
-                                         &new_controller->action_up, 
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_Y));
-
-                SDLProcessGameControllerButton(&old_controller->start, 
-                                         &new_controller->start, 
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_START));
-
-                SDLProcessGameControllerButton(&old_controller->back, 
-                                         &new_controller->back, 
-                                        SDL_GameControllerGetButton(controller_handles[controller_index], SDL_CONTROLLER_BUTTON_BACK));
-
-                real32 threshold = 0.5f;
-                SDLProcessGameControllerButton(&(old_controller->move_left),
-                                               &(new_controller->move_left),
-                                               new_controller->stick_average_x < -threshold);
-                SDLProcessGameControllerButton(&(old_controller->move_right),
-                                               &(old_controller->move_right),
-                                               new_controller->stick_average_x > threshold);
-                SDLProcessGameControllerButton(&(old_controller->move_up),
-                                               &(new_controller->move_up),
-                                               new_controller->stick_average_y < -threshold);
-                SDLProcessGameControllerButton(&(old_controller->move_down),
-                                               &(new_controller->move_down),
-                                               new_controller->stick_average_y > threshold);
-
-            }
-
             else
             {
-                //TODO: The contoller is not plugged
-            }
-        }
-
-        SDL_LockAudio();
-        int byte_to_lock = (sound_output.running_sample_index*sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
-        int bytes_to_write;
-        if(byte_to_lock > audio_ring_buffer.play_cursor)
-        {
-            bytes_to_write = (sound_output.secondary_buffer_size - byte_to_lock);
-            bytes_to_write += audio_ring_buffer.play_cursor;
-        }
-        else
-        {
-            bytes_to_write = audio_ring_buffer.play_cursor - byte_to_lock;
-        }
-        SDL_UnlockAudio();
-
-        // sound
-        GameSoundOutputBuffer sound_buffer = {};
-        sound_buffer.samples_per_second = sound_output.samples_per_second;
-        sound_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
-        sound_buffer.samples = samples;
-
-        // graphics
-        GameOffScreenBuffer buffer = {};
-        buffer.memory = global_back_buffer.memory;
-        buffer.width = global_back_buffer.width;
-        buffer.heigth = global_back_buffer.heigth;
-        buffer.pitch = global_back_buffer.pitch;
-
-        GameUpdateAndRender(&game_memory, new_input, &buffer, &sound_buffer);
-
-        sdl_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
-
-        if(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
-        {
-            uint32 time_to_sleep = ((target_seconds_per_frame - SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter())) * 1000);
-            if(time_to_sleep > 0)
-            {
-                SDL_Delay(time_to_sleep);
-            }
-
-            Assert(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter() < target_seconds_per_frame));
-            while(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
-            {
-                // wait...
+                // TOD0(zourt): do something
             }
         }
         else
         {
+            // TODO: do something
         }
-
-        GameInput *temp = new_input;
-        new_input = old_input;
-        old_input = temp;
-
-        // NOTE(me): try to double check types before typing
-        uint64 end_counter = SDL_GetPerformanceCounter();
-        SDL_UpdateWindow(global_back_buffer, window, renderer);
-
-        uint64 end_cycle_count = _rdtsc();
-        uint64 counter_elapsed = end_counter - last_counter;
-        uint64 cycles_elapsed = end_cycle_count - last_cycle_count;
-
-        real64 ms_per_frame = (((1000.0f * (real64)counter_elapsed) / (real64)perf_count_frequency));
-        real64 fps = 0.0f;
-        real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
-
-        printf("%fms/f at %ffps, %fmc/f\n", ms_per_frame, fps, mcpf);  
-
-        last_cycle_count = end_cycle_count;
-        last_counter = end_counter;
+    }
+    else
+    {
+        // TODO: do something
     }
 
     SDL_CloseCotroller();
