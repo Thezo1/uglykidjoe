@@ -99,7 +99,7 @@ typedef struct GameControllerInput
 
     union
     {
-        GameButtonState buttons[10];
+        GameButtonState buttons[12];
         struct
         {
             GameButtonState move_up;
