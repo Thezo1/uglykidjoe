@@ -1,37 +1,13 @@
 #include<stdio.h>
-#include<stdbool.h>
 #include<sys/mman.h>
-#include<math.h>
 #include<SDL2/SDL.h>
 #include<x86intrin.h>
 #include<fcntl.h>
 #include<unistd.h>
 #include<sys/stat.h>
-
-#define global_variable static
-#define local_persist static
-#define internal static
-
-#define MAX_CONTROLLERS 4
-#define Pi32 3.14159265358979f
-#define FramesOfAudioLatency 2 
-
-typedef int8_t int8;
-typedef int16_t int16;
-typedef int32_t int32;
-typedef int64_t int64;
-
-typedef uint8_t uint8;
-typedef uint16_t uint16;
-typedef uint32_t uint32;
-typedef uint64_t uint64;
-
-typedef  float real32;
-typedef  double real64;
+#include<dlfcn.h>
 
 #include "uglykidjoe.h"
-#include "uglykidjoe.c"
-
 #include "sdl_uglykidjoe.h"
 
 global_variable SDL_OffScreenBuffer global_back_buffer;
@@ -40,6 +16,54 @@ global_variable int64 global_perf_count_frequency;
 SDL_GameController *controller_handles[MAX_CONTROLLERS];
 SDL_Haptic *rumble_handles[MAX_CONTROLLERS];
 RingBuffer audio_ring_buffer;
+
+typedef struct SDL_GameCode
+{
+    void *game_so;
+    game_update_and_render *update_and_render;
+    game_get_sound_samples *get_sound_samples;
+
+    bool is_valid;
+}SDL_GameCode;
+
+internal SDL_GameCode sdl_load_game_code(void)
+{
+    SDL_GameCode result = {};
+
+    result.game_so = dlopen("build/uglykidjoe.so", RTLD_NOW);
+    if(result.game_so)
+    {
+        result.update_and_render = (game_update_and_render*)
+            dlsym(result.game_so, "GameUpdateAndRender");
+        result.get_sound_samples = (game_get_sound_samples*)
+            dlsym(result.game_so, "GameGetSoundSamples");
+
+        result.is_valid = (result.update_and_render && 
+            result.get_sound_samples);
+
+        if (!result.is_valid)
+        {
+            result.update_and_render = GameUpdateAndRenderStub;
+            result.get_sound_samples = GameGetSoundSamplesStub;
+        }
+    }
+    else
+    {
+        // TODO(me): logging
+        printf("something went wrong %s\n", dlerror());
+        exit(1);
+    }
+    return (result);
+}
+
+internal void sdl_unload_game_code(SDL_GameCode *game)
+{
+    dlclose(game->game_so);
+    game->game_so = 0;
+    game->update_and_render = GameUpdateAndRenderStub;
+    game->get_sound_samples = GameGetSoundSamplesStub;
+    game->is_valid = false;
+}
 
 internal void SDL_UpdateWindow(SDL_OffScreenBuffer buffer, SDL_Window *Window, SDL_Renderer *renderer)
 {
@@ -156,6 +180,7 @@ bool handle_event(SDL_Event *event, GameControllerInput *new_keyboard_controller
                 {
                     SDLProcessKeyPress(&new_keyboard_controller->action_right, is_down);
                 }
+                //TODO:(me) assertion fails when calling escp and space
                 else if(keycode == SDLK_ESCAPE)
                 {
                     SDLProcessKeyPress(&new_keyboard_controller->back, is_down);
@@ -309,9 +334,9 @@ internal void SDL_InitAudio(int32 samples_per_second, int32 buffer_size)
     audio_settings.format = AUDIO_S16LSB;
     audio_settings.channels = 2;
 
-    // NOTE:(me) 512 gives a lower latency
+    // NOTE(me): 512 gives a lower latency also determines the length passed to callback
+    // NOTE(me): But the callback funcion would be called more often
     audio_settings.samples = 512;
-    printf("buffer size = %i\n", buffer_size);
     audio_settings.callback = &SDLAudioCallback;
     audio_settings.userdata = &audio_ring_buffer;
 
@@ -391,7 +416,12 @@ internal inline uint32 SafeTruncateUint64(uint64 value)
     return(result);
 }
 
-internal DEBUG_ReadFileResult DEBUGPlatformReadEntireFile(char *filename)
+DEBUG_PLATFORM_FREE_FILE_MEMORY(DEBUG_platform_free_file_memory)
+{
+    free(memory);
+}
+
+DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUG_platform_read_entire_file)
 {
     DEBUG_ReadFileResult result = {};
     int FILE = open(filename, O_RDONLY);
@@ -424,7 +454,7 @@ internal DEBUG_ReadFileResult DEBUGPlatformReadEntireFile(char *filename)
         uint32 bytes_read = read(FILE, next_byte_location, bytes_to_read);
         if(bytes_read == -1)
         {
-            free(result.contents);
+            DEBUG_platform_free_file_memory(result.contents);
             result.content_size = 0;
             result.contents = 0;
             close(FILE);
@@ -438,12 +468,7 @@ internal DEBUG_ReadFileResult DEBUGPlatformReadEntireFile(char *filename)
     return result;
 }
 
-internal void DEBUGPlatormFreeFileMemory(void *memory)
-{
-    free(memory);
-}
-
-internal bool DEBUGPlatformWriteEntireFile(char *filename, uint64 memory_size, void *memory)
+DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUG_platform_write_entire_file)
 {
 int FILE = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH); 
     if(!FILE)
@@ -471,7 +496,7 @@ int FILE = open(filename, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR | S_IRGRP | S_IR
     return true;
 }
 
-internal int SDLGetWindowRefreshRate(SDL_Window *window)
+int SDLGetWindowRefreshRate(SDL_Window *window)
 {
     SDL_DisplayMode mode;
     int display_index = SDL_GetWindowDisplayIndex(window);
@@ -523,23 +548,34 @@ internal void SDL_DrawSoundBufferMarker(SDL_OffScreenBuffer *back_buffer,
 internal void SDL_DebugSyncDisplay(SDL_OffScreenBuffer *back_buffer, 
                                    int marker_count,
                                    DebugTimeMarker *markers, 
+                                   int current_marker_index,
                                    SDL_SoundOutput *sound_output,
                                    real32 target_seconds_per_frame)
 {
     int pad_x = 16;
     int pad_y = 16;
 
-    int top = pad_y;
-    int bottom = back_buffer->heigth - pad_y;
+    int line_height = 64;
 
     real32 c = (back_buffer->width - 2*pad_x) / (real32)sound_output->secondary_buffer_size;
     for(int marker_index = 0;
         marker_index < marker_count;
         ++marker_index)
     {
+        int top = pad_y;
+        int bottom = pad_y + line_height;
+
+        int play_color = 0xFFFFFF;
+        int write_color = 0xFF0000;
+        if(marker_index == current_marker_index)
+        {
+            top += line_height+pad_y;
+            bottom += line_height+pad_y;
+        }
+
         DebugTimeMarker *this_marker = &markers[marker_index];
-        SDL_DrawSoundBufferMarker(back_buffer, sound_output, c, pad_x, top, bottom, this_marker->play_cursor, 0xFFFFFF);
-        SDL_DrawSoundBufferMarker(back_buffer, sound_output, c, pad_x, top, bottom, this_marker->write_cursor, 0xFF0000);
+        SDL_DrawSoundBufferMarker(back_buffer, sound_output, c, pad_x, top, bottom, this_marker->play_cursor, play_color);
+        SDL_DrawSoundBufferMarker(back_buffer, sound_output, c, pad_x, top, bottom, this_marker->write_cursor, write_color);
     }
 }
 
@@ -593,7 +629,10 @@ int main(int argc, char *argv[])
             sound_output.running_sample_index = 0;
             sound_output.bytes_per_sample = sizeof(int16) * 2;
             sound_output.secondary_buffer_size = sound_output.samples_per_second * sound_output.bytes_per_sample;
-            sound_output.latency_sample_count = FramesOfAudioLatency*(sound_output.samples_per_second / game_update_hz);
+
+            // TODO: compute this varience and see what The
+            // lowest reasonable value is
+            sound_output.safety_bytes = ((sound_output.samples_per_second*sound_output.bytes_per_sample)/game_update_hz)/3;
 
             // NOTE: Open audio device
             SDL_InitAudio(48000, sound_output.secondary_buffer_size);
@@ -609,8 +648,12 @@ int main(int argc, char *argv[])
             GameMemory game_memory = {};
             game_memory.permanent_storage_size = MegaBytes(64);
             game_memory.transient_storage_size = GigaBytes(4);
-            uint64 total_storage_size = game_memory.permanent_storage_size + game_memory.transient_storage_size;
 
+            game_memory.DEBUG_platform_free_file_memory = DEBUG_platform_free_file_memory;
+            game_memory.DEBUG_platform_read_entire_file = DEBUG_platform_read_entire_file;
+            game_memory.DEBUG_platform_write_entire_file = DEBUG_platform_write_entire_file;
+
+            uint64 total_storage_size = game_memory.permanent_storage_size + game_memory.transient_storage_size;
             game_memory.permanent_storage = mmap(base_address, 
                                                  total_storage_size,
                                                  PROT_READ | PROT_WRITE, 
@@ -622,14 +665,28 @@ int main(int argc, char *argv[])
 
             if (samples && game_memory.permanent_storage && game_memory.transient_storage)
             {
-                uint64 last_counter = SDL_GetPerformanceCounter();
+                uint64 last_counter = SDL_GetWallClock();
                 uint64 last_cycle_count = _rdtsc();
+
+                int audio_latency_bytes = 0;
+                real32 audio_latency_seconds = 0;
 
                 int debug_time_marker_index = 0;
                 DebugTimeMarker debug_time_markers[30/2] = {0};
                 int last_play_cursor = 0;
+                int last_write_cursor = 0;
+                bool sound_is_valid = false;
+                SDL_GameCode game = sdl_load_game_code();
+                uint32 load_counter = 0;
                 while(running)
                 {
+                    if(load_counter++ > 120)
+                    {
+                        sdl_unload_game_code(&game);
+                        game = sdl_load_game_code();
+                        load_counter = 0;
+                    }
+
                     GameControllerInput *old_keyboard_controller = get_controller(old_input, 0);
                     GameControllerInput *new_keyboard_controller = get_controller(new_input, 0);
                     GameControllerInput zero_controller = {};
@@ -751,10 +808,50 @@ int main(int argc, char *argv[])
                         }
                     }
 
-                    SDL_LockAudio();
-                    int byte_to_lock = (sound_output.running_sample_index*sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
-                    int target_cursor = (last_play_cursor+(sound_output.latency_sample_count*sound_output.bytes_per_sample)) % sound_output.secondary_buffer_size;
+                    // graphics
+                    GameOffScreenBuffer buffer = {};
+                    buffer.memory = global_back_buffer.memory;
+                    buffer.width = global_back_buffer.width;
+                    buffer.heigth = global_back_buffer.heigth;
+                    buffer.pitch = global_back_buffer.pitch;
 
+                    game.update_and_render(&game_memory, new_input, &buffer);
+
+                    SDL_LockAudio();
+                    if(!sound_is_valid)
+                    {
+                        sound_output.running_sample_index = audio_ring_buffer.write_cursor / sound_output.samples_per_second;
+                        sound_is_valid = true;
+                    }
+
+                    int byte_to_lock = (sound_output.running_sample_index*sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
+
+                    int expected_sound_bytes_per_frame = 
+                        (sound_output.samples_per_second*sound_output.bytes_per_sample) / game_update_hz;
+
+                    int expected_frame_boundry_byte = audio_ring_buffer.play_cursor + expected_sound_bytes_per_frame;
+
+                    int safe_write_cursor = audio_ring_buffer.write_cursor;
+                    if(safe_write_cursor < audio_ring_buffer.play_cursor)
+                    {
+                        safe_write_cursor += sound_output.secondary_buffer_size;
+                    }
+                    Assert(safe_write_cursor >= audio_ring_buffer.play_cursor);
+                    safe_write_cursor +=(audio_ring_buffer.write_cursor + sound_output.safety_bytes);
+                    bool audio_card_is_low_latent = (safe_write_cursor < expected_frame_boundry_byte);
+
+                    int target_cursor = 0;
+                    if(audio_card_is_low_latent)
+                    {
+                        target_cursor = (expected_frame_boundry_byte + expected_sound_bytes_per_frame); 
+                    }
+                    else
+                    {
+                        target_cursor = (audio_ring_buffer.write_cursor + 
+                            expected_sound_bytes_per_frame + sound_output.safety_bytes);
+                    }
+                        
+                    target_cursor = target_cursor % sound_output.secondary_buffer_size;
                     int bytes_to_write;
                     if(byte_to_lock > target_cursor)
                     {
@@ -772,28 +869,41 @@ int main(int argc, char *argv[])
                     sound_buffer.samples_per_second = sound_output.samples_per_second;
                     sound_buffer.sample_count = bytes_to_write / sound_output.bytes_per_sample;
                     sound_buffer.samples = samples;
+                    game.get_sound_samples(&game_memory, &sound_buffer);
 
-                    // graphics
-                    GameOffScreenBuffer buffer = {};
-                    buffer.memory = global_back_buffer.memory;
-                    buffer.width = global_back_buffer.width;
-                    buffer.heigth = global_back_buffer.heigth;
-                    buffer.pitch = global_back_buffer.pitch;
-
-                    GameUpdateAndRender(&game_memory, new_input, &buffer, &sound_buffer);
+#if UGLYKIDJOE_INTERNAL
+                    int unwrapped_write_cursor = audio_ring_buffer.write_cursor;
+                    if(unwrapped_write_cursor < audio_ring_buffer.play_cursor)
+                    {
+                        unwrapped_write_cursor += sound_output.secondary_buffer_size;
+                    }
+                    audio_latency_bytes = unwrapped_write_cursor - audio_ring_buffer.play_cursor;
+                    audio_latency_seconds = (((real32)audio_latency_bytes / (real32)sound_output.bytes_per_sample) / (real32)sound_output.samples_per_second);
+                    printf("bl: %i, bw: %i, play cursor: %i, write cursor: %i, bytes_btwn: %i, sec_bwtn_samps: %fs\n", 
+                           byte_to_lock, bytes_to_write, audio_ring_buffer.play_cursor, audio_ring_buffer.write_cursor, audio_latency_bytes, audio_latency_seconds);
+#endif
 
                     sdl_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
 
-                    if(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
+                    if(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock()) < target_seconds_per_frame)
                     {
-                        uint32 time_to_sleep = ((target_seconds_per_frame - SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter())) * 1000);
+                        uint32 time_to_sleep = ((target_seconds_per_frame - SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock())) * 1000);
                         if(time_to_sleep > 0)
                         {
                             SDL_Delay(time_to_sleep);
                         }
 
-                        Assert(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter() < target_seconds_per_frame));
-                        while(SDL_GetSecondsElapsed(last_counter, SDL_GetPerformanceCounter()) < target_seconds_per_frame)
+                        if(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock() < target_seconds_per_frame))
+                        {
+                            //TODO: log miss
+                        }
+
+                        if(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock() < target_seconds_per_frame))
+                        {
+                            //TODO: log miss
+                        }
+
+                        while(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock()) < target_seconds_per_frame)
                         {
                             // wait...
                         }
@@ -802,24 +912,26 @@ int main(int argc, char *argv[])
                     {
                     }
 
-                    uint64 end_counter = SDL_GetPerformanceCounter();
+                    uint64 end_counter = SDL_GetWallClock();
                     uint64 counter_elapsed = end_counter - last_counter;
                     real64 ms_per_frame = (((1000.0f * (real64)counter_elapsed) / (real64)perf_count_frequency));
                     last_counter = end_counter;
 
 #if UGLYKIDJOE_INTERNAL
-                    SDL_DebugSyncDisplay(&global_back_buffer, ArrayCount(debug_time_markers), debug_time_markers, &sound_output, target_seconds_per_frame);
+                    SDL_DebugSyncDisplay(&global_back_buffer, ArrayCount(debug_time_markers), debug_time_markers, debug_time_marker_index, &sound_output, target_seconds_per_frame);
 #endif
 
                     SDL_UpdateWindow(global_back_buffer, window, renderer);
+                    last_write_cursor = audio_ring_buffer.write_cursor;
                     last_play_cursor = audio_ring_buffer.play_cursor;
+
 
 #if UGLYKIDJOE_INTERNAL
                     {
                         DebugTimeMarker *marker = &debug_time_markers[debug_time_marker_index ++];
                         marker->play_cursor = audio_ring_buffer.play_cursor;
                         marker->write_cursor = audio_ring_buffer.write_cursor;
-                        if(debug_time_marker_index > ArrayCount(debug_time_markers))
+                        if(debug_time_marker_index >= ArrayCount(debug_time_markers))
                         {
                             debug_time_marker_index = 0;
                         }

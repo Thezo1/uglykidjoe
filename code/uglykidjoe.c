@@ -14,35 +14,33 @@ static void render_gradient(GameOffScreenBuffer *buffer, int blue_offset, int gr
         {
             uint8 blue = (x + blue_offset);
             uint8 green = (y + green_offset);
-            *pixel++ = ((green<<8) | blue);
+            *pixel++ = ((green<<0) | blue);
         }
 
         row += pitch;
     }
 }
 
-static void game_output_sound(GameSoundOutputBuffer *sound_buffer)
+static void game_output_sound(GameSoundOutputBuffer *sound_buffer, GameState *game_state)
 {
-    local_persist real32 tsine;
     int16 tone_volume = 3000;
-    int tone_hz = 256;
-    int wave_period = sound_buffer->samples_per_second/tone_hz;
+    int wave_period = sound_buffer->samples_per_second/game_state->tone_hz;
 
     int16 *sample_out = sound_buffer->samples;
     for(int sample_index = 0;
         sample_index < sound_buffer->sample_count;
         ++sample_index)
     {
-        real32 sine_value = sinf(tsine);
+        real32 sine_value = sinf(game_state->tsine);
         int16 sample_value = (int16)(sine_value * tone_volume);
         *sample_out++ = sample_value;
         *sample_out++ = sample_value;
 
-        tsine += 2.0f*Pi32*1.0f/(real32)wave_period;
+        game_state->tsine += 2.0f*Pi32*1.0f/(real32)wave_period;
     }
 }
 
-void GameUpdateAndRender(GameMemory *memory, GameInput *input, GameOffScreenBuffer *buffer, GameSoundOutputBuffer *sound_buffer)
+GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 {
     Assert((sizeof(GameState)) <= memory->permanent_storage_size);
 
@@ -51,15 +49,16 @@ void GameUpdateAndRender(GameMemory *memory, GameInput *input, GameOffScreenBuff
     {
         char *filename = __FILE__;
 
-        DEBUG_ReadFileResult result = DEBUGPlatformReadEntireFile(filename);
+        DEBUG_ReadFileResult result = memory->DEBUG_platform_read_entire_file(filename);
         void *file_memory = result.contents;
         if(file_memory)
         {
-            DEBUGPlatformWriteEntireFile("data/test.out", result.content_size, result.contents);
-            DEBUGPlatormFreeFileMemory(file_memory);
+            memory->DEBUG_platform_write_entire_file("data/test.out", result.content_size, result.contents);
+            memory->DEBUG_platform_free_file_memory(file_memory);
         }
 
         game_state->tone_hz = 256;
+        game_state->tsine = 0.0f;
         memory->is_initialized = true;
     }
 
@@ -84,16 +83,22 @@ void GameUpdateAndRender(GameMemory *memory, GameInput *input, GameOffScreenBuff
 
         if(controller->move_left.ended_down)
         {
-            game_state->blue_offset -= 1;
+            game_state->tone_hz -= 10;
         }
 
         if(controller->move_right.ended_down)
         {
-            game_state->blue_offset += 1;
+            game_state->tone_hz += 10;
         }
     }
 
-
-    game_output_sound(sound_buffer);
     render_gradient(buffer, game_state->blue_offset, game_state->green_offset);
+}
+
+GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
+{
+    Assert((sizeof(GameState)) <= memory->permanent_storage_size);
+    GameState *game_state = (GameState *)memory->permanent_storage;
+
+    game_output_sound(sound_buffer, game_state);
 }

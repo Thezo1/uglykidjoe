@@ -3,6 +3,7 @@
 
 // back buffer stuff
 // NOTE:(zourt) each pixel is 4 bytes || 32 bits
+
 typedef struct SDL_OffScreenBuffer
 {
     SDL_Texture *texture;
@@ -33,8 +34,7 @@ typedef struct SDL_SoundOutput
     uint32 running_sample_index;
     int bytes_per_sample;
     int secondary_buffer_size;
-    int latency_sample_count;
-    
+    int safety_bytes;
 }SDL_SoundOutput;
 
 typedef struct DebugTimeMarker
