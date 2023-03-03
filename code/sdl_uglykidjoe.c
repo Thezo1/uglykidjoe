@@ -6,6 +6,7 @@
 #include<unistd.h>
 #include<sys/stat.h>
 #include<dlfcn.h>
+#include<errno.h>
 
 #include "uglykidjoe.h"
 #include "sdl_uglykidjoe.h"
@@ -17,34 +18,107 @@ SDL_GameController *controller_handles[MAX_CONTROLLERS];
 SDL_Haptic *rumble_handles[MAX_CONTROLLERS];
 RingBuffer audio_ring_buffer;
 
-typedef struct SDL_GameCode
+// NOTE:(me) copied from stack overflow, 
+// so don't ask me how I wrote it.
+internal int copy_file(const char *to, const char *from)
 {
-    void *game_so;
-    game_update_and_render *update_and_render;
-    game_get_sound_samples *get_sound_samples;
+    int fd_to, fd_from;
+    char buf[4096];
+    ssize_t nread;
+    int saved_errno;
 
-    bool is_valid;
-}SDL_GameCode;
+    fd_from = open(from, O_RDONLY);
+    if (fd_from < 0)
+        return -1;
 
-internal SDL_GameCode sdl_load_game_code(void)
-{
-    SDL_GameCode result = {};
+    // NOTE:(me) O_CREAT on it's own creates the file,
+    // and overwrited contents if file exists. 
+    // Combining with O_EXCL jsut errors out
+    fd_to = open(to, O_WRONLY | O_CREAT, 0666);
+    if (fd_to < 0)
+        goto out_error;
 
-    result.game_so = dlopen("build/uglykidjoe.so", RTLD_NOW);
-    if(result.game_so)
+    while (nread = read(fd_from, buf, sizeof buf), nread > 0)
     {
-        result.update_and_render = (game_update_and_render*)
-            dlsym(result.game_so, "GameUpdateAndRender");
-        result.get_sound_samples = (game_get_sound_samples*)
-            dlsym(result.game_so, "GameGetSoundSamples");
+        char *out_ptr = buf;
+        ssize_t nwritten;
 
-        result.is_valid = (result.update_and_render && 
-            result.get_sound_samples);
+        do {
+            nwritten = write(fd_to, out_ptr, nread);
 
-        if (!result.is_valid)
+            if (nwritten >= 0)
+            {
+                nread -= nwritten;
+                out_ptr += nwritten;
+            }
+            else if (errno != EINTR)
+            {
+                goto out_error;
+            }
+        } while (nread > 0);
+    }
+
+    if (nread == 0)
+    {
+        if (close(fd_to) < 0)
         {
-            result.update_and_render = GameUpdateAndRenderStub;
-            result.get_sound_samples = GameGetSoundSamplesStub;
+            fd_to = -1;
+            goto out_error;
+        }
+        close(fd_from);
+
+        /* Success! */
+        return 0;
+    }
+
+  out_error:
+    saved_errno = errno;
+
+    close(fd_from);
+    if (fd_to >= 0)
+        close(fd_to);
+
+    errno = saved_errno;
+    return -1;
+}
+
+internal struct timespec sdl_get_last_write_time(char *path)
+{
+    struct stat stat_buf = {};
+    uint32 stat_result = stat("build/uglykidjoe.so", &stat_buf);
+    struct timespec result = {};
+    if(stat_result != 0)
+    {
+        printf("Unalbe to stat game source path: %s", path);
+        exit(1);
+    }
+
+    result = stat_buf.st_mtim; 
+    return (result);
+}
+
+internal void sdl_load_game_code(SDL_GameCode *game_code, char *path)
+{
+    game_code->last_write_time = sdl_get_last_write_time(path);
+
+    char *temp_so_name = "build/uglykidjoe_temp.so";
+    copy_file(temp_so_name, path);
+
+    game_code->game_so = dlopen("build/uglykidjoe_temp.so", RTLD_LAZY);
+    if(game_code->game_so)
+    {
+        game_code->update_and_render = (game_update_and_render*)
+            dlsym(game_code->game_so, "GameUpdateAndRender");
+        game_code->get_sound_samples = (game_get_sound_samples*)
+            dlsym(game_code->game_so, "GameGetSoundSamples");
+
+        game_code->is_valid = (game_code->update_and_render && 
+            game_code->get_sound_samples);
+
+        if (!game_code->is_valid)
+        {
+            game_code->update_and_render = GameUpdateAndRenderStub;
+            game_code->get_sound_samples = GameGetSoundSamplesStub;
         }
     }
     else
@@ -53,7 +127,6 @@ internal SDL_GameCode sdl_load_game_code(void)
         printf("something went wrong %s\n", dlerror());
         exit(1);
     }
-    return (result);
 }
 
 internal void sdl_unload_game_code(SDL_GameCode *game)
@@ -180,7 +253,6 @@ bool handle_event(SDL_Event *event, GameControllerInput *new_keyboard_controller
                 {
                     SDLProcessKeyPress(&new_keyboard_controller->action_right, is_down);
                 }
-                //TODO:(me) assertion fails when calling escp and space
                 else if(keycode == SDLK_ESCAPE)
                 {
                     SDLProcessKeyPress(&new_keyboard_controller->back, is_down);
@@ -336,7 +408,7 @@ internal void SDL_InitAudio(int32 samples_per_second, int32 buffer_size)
 
     // NOTE(me): 512 gives a lower latency also determines the length passed to callback
     // NOTE(me): But the callback funcion would be called more often
-    audio_settings.samples = 512;
+    audio_settings.samples = 1024;
     audio_settings.callback = &SDLAudioCallback;
     audio_settings.userdata = &audio_ring_buffer;
 
@@ -676,15 +748,17 @@ int main(int argc, char *argv[])
                 int last_play_cursor = 0;
                 int last_write_cursor = 0;
                 bool sound_is_valid = false;
-                SDL_GameCode game = sdl_load_game_code();
-                uint32 load_counter = 0;
+
+                SDL_GameCode game = {};
+                char* game_code_source_file_path = (char *)"build/uglykidjoe.so";
+                sdl_load_game_code(&game, game_code_source_file_path);
                 while(running)
                 {
-                    if(load_counter++ > 120)
+                    struct timespec new_source_write_time = sdl_get_last_write_time(game_code_source_file_path);
+                    if(new_source_write_time.tv_nsec != game.last_write_time.tv_nsec)
                     {
                         sdl_unload_game_code(&game);
-                        game = sdl_load_game_code();
-                        load_counter = 0;
+                        sdl_load_game_code(&game, game_code_source_file_path);
                     }
 
                     GameControllerInput *old_keyboard_controller = get_controller(old_input, 0);
@@ -950,7 +1024,10 @@ int main(int argc, char *argv[])
                     real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
 
                     last_cycle_count = end_cycle_count;
+#if UGLYKIDJOE_INTERNAL
                     printf("%fms/f at %ffps, %fmc/f\n", ms_per_frame, fps, mcpf);  
+#endif
+
                 }
             }
             else

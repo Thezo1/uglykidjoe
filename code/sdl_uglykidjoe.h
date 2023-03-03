@@ -43,4 +43,14 @@ typedef struct DebugTimeMarker
     int write_cursor;
 }DebugTimeMarker;
 
+typedef struct SDL_GameCode
+{
+    void *game_so;
+    struct timespec last_write_time;
+    game_update_and_render *update_and_render;
+    game_get_sound_samples *get_sound_samples;
+
+    bool is_valid;
+}SDL_GameCode;
+
 #endif
