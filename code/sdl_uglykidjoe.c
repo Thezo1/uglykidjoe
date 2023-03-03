@@ -85,7 +85,7 @@ internal int copy_file(const char *to, const char *from)
 internal struct timespec sdl_get_last_write_time(char *path)
 {
     struct stat stat_buf = {};
-    uint32 stat_result = stat("build/uglykidjoe.so", &stat_buf);
+    uint32 stat_result = stat(path, &stat_buf);
     struct timespec result = {};
     if(stat_result != 0)
     {
@@ -97,14 +97,14 @@ internal struct timespec sdl_get_last_write_time(char *path)
     return (result);
 }
 
-internal void sdl_load_game_code(SDL_GameCode *game_code, char *path)
+internal void sdl_load_game_code(SDL_GameCode *game_code, char *source_name, char *temp_name)
 {
-    game_code->last_write_time = sdl_get_last_write_time(path);
+    game_code->last_write_time = sdl_get_last_write_time(source_name);
 
-    char *temp_so_name = "build/uglykidjoe_temp.so";
-    copy_file(temp_so_name, path);
+    char *temp_so_name = temp_name;
+    copy_file(temp_name, source_name);
 
-    game_code->game_so = dlopen("build/uglykidjoe_temp.so", RTLD_LAZY);
+    game_code->game_so = dlopen(temp_name, RTLD_LAZY);
     if(game_code->game_so)
     {
         game_code->update_and_render = (game_update_and_render*)
@@ -651,8 +651,55 @@ internal void SDL_DebugSyncDisplay(SDL_OffScreenBuffer *back_buffer,
     }
 }
 
+void cat_strings(size_t source_a_count, char *source_a, 
+                size_t source_b_count, char *source_b,
+                size_t dest_count, char *dest)
+{
+    for(int index = 0;
+        index < source_a_count;
+        index++)
+    {
+        *dest++ = *source_a++;
+    }
+
+    for(int index = 0;
+        index < source_b_count;
+        index++)
+    {
+        *dest++ = *source_b++;
+    }
+
+    *dest++ = 0;
+}
+
 int main(int argc, char *argv[])
 {
+    // NOTE: Debug code only
+    char exe_filename[PATH_MAX];
+    ssize_t size_of_filename = readlink("/proc/self/exe", exe_filename, sizeof(exe_filename));
+    char *one_past_last_slash = exe_filename;
+    for(char *scan = exe_filename;
+        *scan;
+        scan++)
+    {
+        if(*scan == '/')
+        {
+            one_past_last_slash = scan + 1;
+        }
+    }
+
+    char source_game_code_file_name[] = "uglykidjoe.so";
+    char source_game_code_full_path[PATH_MAX];
+    cat_strings(one_past_last_slash - exe_filename, exe_filename,
+                sizeof(source_game_code_file_name) - 1, source_game_code_file_name,
+                sizeof(source_game_code_full_path), source_game_code_full_path);
+
+    char temp_game_code_file_name[] = "uglykidjoe_temp.so";
+    char temp_game_code_full_path[PATH_MAX];
+    cat_strings(one_past_last_slash - exe_filename, exe_filename,
+                sizeof(temp_game_code_file_name) - 1, temp_game_code_file_name,
+                sizeof(temp_game_code_full_path), temp_game_code_full_path);
+
     SDL_Window *window;
     SDL_Renderer *renderer;
 
@@ -750,15 +797,14 @@ int main(int argc, char *argv[])
                 bool sound_is_valid = false;
 
                 SDL_GameCode game = {};
-                char* game_code_source_file_path = (char *)"build/uglykidjoe.so";
-                sdl_load_game_code(&game, game_code_source_file_path);
+                sdl_load_game_code(&game, source_game_code_full_path, temp_game_code_full_path);
                 while(running)
                 {
-                    struct timespec new_source_write_time = sdl_get_last_write_time(game_code_source_file_path);
+                    struct timespec new_source_write_time = sdl_get_last_write_time(source_game_code_full_path);
                     if(new_source_write_time.tv_nsec != game.last_write_time.tv_nsec)
                     {
                         sdl_unload_game_code(&game);
-                        sdl_load_game_code(&game, game_code_source_file_path);
+                        sdl_load_game_code(&game, source_game_code_full_path, temp_game_code_full_path);
                     }
 
                     GameControllerInput *old_keyboard_controller = get_controller(old_input, 0);
