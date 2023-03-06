@@ -37,6 +37,8 @@ typedef uint64_t uint64;
 typedef  float real32;
 typedef  double real64;
 
+global_variable bool global_running;
+
 // NOTE: services the platform provides to the game
 #if UGLYKIDJOE_INTERNAL
     typedef struct DEBUG_ReadFileResult
@@ -73,8 +75,9 @@ typedef struct GameOffScreenBuffer
 {
     void *memory;
     int width;
-    int heigth;
+    int height;
     int pitch;
+    int bytes_per_pixel;
 } GameOffScreenBuffer;
 
 typedef struct GameSoundOutputBuffer
@@ -138,7 +141,12 @@ typedef struct GameState
     int tone_hz;
     int green_offset;
     int blue_offset;
+
     real32 tsine;
+
+    int player_x;
+    int player_y;
+    real32 tjump;
 }GameState;
 
 typedef struct GameMemory
@@ -159,15 +167,9 @@ typedef struct GameMemory
 
 #define GAME_UPDATE_AND_RENDER(name) void name(GameMemory *memory, GameInput *input, GameOffScreenBuffer *buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
-GAME_UPDATE_AND_RENDER(GameUpdateAndRenderStub)
-{
-}
 
 // NOTE: keep this function below 1 millisecond
 #define GAME_GET_SOUND_SAMPLES(name) void name(GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
-GAME_GET_SOUND_SAMPLES(GameGetSoundSamplesStub)
-{
-}
 
 #endif

@@ -3,13 +3,14 @@
 
 // back buffer stuff
 // NOTE:(zourt) each pixel is 4 bytes || 32 bits
+#define PATH_MAX 4096
 
 typedef struct SDL_OffScreenBuffer
 {
     SDL_Texture *texture;
     void *memory;
     int width;
-    int heigth;
+    int height;
     int pitch;
     int bytes_per_pixel;
 } SDL_OffScreenBuffer;
@@ -43,6 +44,7 @@ typedef struct DebugTimeMarker
     int write_cursor;
 }DebugTimeMarker;
 
+// function pointer can return null, so check whenver called
 typedef struct SDL_GameCode
 {
     void *game_so;
@@ -52,5 +54,20 @@ typedef struct SDL_GameCode
 
     bool is_valid;
 }SDL_GameCode;
+
+typedef struct SDL_State
+{
+    uint64 total_size;
+    void *game_memory_block;
+
+    int recording_handle;
+    int input_recording_index;
+
+    int playback_handle;
+    int input_playing_index;
+
+    char exe_filename[PATH_MAX];
+    char *one_past_last_slash;
+}SDL_State;
 
 #endif
