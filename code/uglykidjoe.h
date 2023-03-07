@@ -16,6 +16,7 @@
 #include<math.h>
 #include<stdint.h>
 #include<stdbool.h>
+#include<stdio.h>
 
 #define global_variable static
 #define local_persist static
@@ -135,11 +136,13 @@ typedef struct GameInput
         NOTE(me): 
 
         0 = left button, 
-        1 = rigth button, 
+        1 = right button, 
         2 = middle button
     */
     GameButtonState mouse_buttons[5];
     int32 mouse_x, mouse_y, mouse_z;
+
+    real32 dt_for_frame;
 
     GameControllerInput controllers[5];
 }GameInput;
@@ -153,15 +156,8 @@ extern inline GameControllerInput *get_controller(GameInput *input, int controll
 
 typedef struct GameState
 {
-    int tone_hz;
-    int green_offset;
-    int blue_offset;
-
-    real32 tsine;
-
-    int player_x;
-    int player_y;
-    real32 tjump;
+    real32 player_x;
+    real32 player_y;
 }GameState;
 
 typedef struct GameMemory
@@ -186,6 +182,19 @@ typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 // NOTE: keep this function below 1 millisecond
 #define GAME_GET_SOUND_SAMPLES(name) void name(ThreadContext *thread, GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
+
+typedef struct TileMap
+{
+    int32 count_x;
+    int32 count_y;
+
+    real32 upperleft_x;
+    real32 upperleft_y;
+    real32 tile_width;
+    real32 tile_heigth;
+
+    uint32 *tiles;
+}TileMap;
 
 
 #endif

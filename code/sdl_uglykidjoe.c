@@ -878,27 +878,27 @@ int main(int argc, char *argv[])
     window = SDL_CreateWindow("uglykidjoe", 
                               SDL_WINDOWPOS_UNDEFINED, 
                               SDL_WINDOWPOS_UNDEFINED, 
-                              640, 
-                              640, 
+                              960, 
+                              540, 
                               SDL_WINDOW_RESIZABLE);
     if(window)
     {
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
         if(renderer)
         {
-            SDL_ResizeTexture(&global_back_buffer, renderer, 640, 640);
+            SDL_ResizeTexture(&global_back_buffer, renderer, 960, 540);
 
             int monitor_refresh_rate = SDLGetWindowRefreshRate(window);
             printf("Refresh rate is %d Hz\n", monitor_refresh_rate);
 
-            // TODO(me): forces game to update at 30hz try not to hard code the figure
             real32 game_update_hz = (real32)(monitor_refresh_rate) / 2.0f;
             real32 target_seconds_per_frame = 1.0f / (real32)game_update_hz;
 
             int input_recording_index = 0;
             int input_playing_index = 0;
+            // TODO(me): forces game to update at 30hz try not to hard code the figure
 
-            global_running= true;
+            global_running = true;
             
             // NOTE: Test sound
             SDL_SoundOutput sound_output = {};
@@ -988,6 +988,8 @@ int main(int argc, char *argv[])
                 sdl_load_game_code(&game, source_game_code_full_path, temp_game_code_full_path);
                 while(global_running)
                 {
+                    new_input->dt_for_frame = target_seconds_per_frame;
+
                     struct timespec new_source_write_time = sdl_get_last_write_time(source_game_code_full_path);
                     if(new_source_write_time.tv_nsec != game.last_write_time.tv_nsec)
                     {
@@ -1214,7 +1216,7 @@ int main(int argc, char *argv[])
                             game.get_sound_samples(&thread, &game_memory, &sound_buffer);
                         }
 
-#if UGLYKIDJOE_INTERNAL
+#if 0
                         int unwrapped_write_cursor = audio_ring_buffer.write_cursor;
                         if(unwrapped_write_cursor < audio_ring_buffer.play_cursor)
                         {
@@ -1228,27 +1230,25 @@ int main(int argc, char *argv[])
 
                         sdl_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
 
-                        if(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock()) < target_seconds_per_frame)
+                        real32 seconds_elapsed_for_frame = SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock());
+                        if(seconds_elapsed_for_frame < target_seconds_per_frame)
                         {
-                            uint32 time_to_sleep = ((target_seconds_per_frame - SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock())) * 1000);
+                            uint32 time_to_sleep = ((target_seconds_per_frame - seconds_elapsed_for_frame) * 1000);
                             if(time_to_sleep > 0)
                             {
                                 SDL_Delay(time_to_sleep);
                             }
 
-                            if(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock() < target_seconds_per_frame))
+                            if(seconds_elapsed_for_frame < target_seconds_per_frame)
                             {
-                                //TODO: log miss
+                                //TODO: log missed sleep
                             }
 
-                            if(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock() < target_seconds_per_frame))
-                            {
-                                //TODO: log miss
-                            }
-
-                            while(SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock()) < target_seconds_per_frame)
+                            while(seconds_elapsed_for_frame < target_seconds_per_frame)
                             {
                                 // wait...
+                                seconds_elapsed_for_frame = SDL_GetSecondsElapsed(last_counter, 
+                                                            SDL_GetWallClock());
                             }
                         }
                         else
@@ -1257,10 +1257,10 @@ int main(int argc, char *argv[])
 
                         uint64 end_counter = SDL_GetWallClock();
                         uint64 counter_elapsed = end_counter - last_counter;
-                        real64 ms_per_frame = (((1000.0f * (real64)counter_elapsed) / (real64)perf_count_frequency));
+                        real64 ms_per_frame = 1000.0f*SDL_GetSecondsElapsed(last_counter, end_counter);
                         last_counter = end_counter;
 
-#if UGLYKIDJOE_INTERNAL
+#if 0
                         // SDL_DebugSyncDisplay(&global_back_buffer, ArrayCount(debug_time_markers), debug_time_markers, debug_time_marker_index, &sound_output, target_seconds_per_frame);
 #endif
 
@@ -1269,7 +1269,7 @@ int main(int argc, char *argv[])
                         last_play_cursor = audio_ring_buffer.play_cursor;
 
 
-#if UGLYKIDJOE_INTERNAL
+#if 0
                         {
                             DebugTimeMarker *marker = &debug_time_markers[debug_time_marker_index ++];
                             marker->play_cursor = audio_ring_buffer.play_cursor;
@@ -1293,7 +1293,7 @@ int main(int argc, char *argv[])
                         real64 mcpf = ((real64)cycles_elapsed / (1000.0f * 1000.0f));
 
                         last_cycle_count = end_cycle_count;
-#if UGLYKIDJOE_INTERNAL
+#if 0
                         printf("%fms/f at %ffps, %fmc/f\n", ms_per_frame, fps, mcpf);  
 #endif
 
