@@ -55,10 +55,18 @@ typedef struct SDL_GameCode
     bool is_valid;
 }SDL_GameCode;
 
+typedef struct SDL_ReplayBuffer
+{
+    int file_handle;
+    char replay_filename[PATH_MAX];
+    void *memory_block;
+}SDL_ReplayBuffer;
+
 typedef struct SDL_State
 {
     uint64 total_size;
     void *game_memory_block;
+    SDL_ReplayBuffer replay_buffers[2];
 
     int recording_handle;
     int input_recording_index;

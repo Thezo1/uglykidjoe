@@ -88,13 +88,13 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     {
         char *filename = __FILE__;
 
-        DEBUG_ReadFileResult result = memory->DEBUG_platform_read_entire_file(filename);
+        DEBUG_ReadFileResult result = memory->DEBUG_platform_read_entire_file(thread, filename);
         void *file_memory = result.contents;
         if(file_memory)
         {
             //TODO: dont't hard code test file
-            memory->DEBUG_platform_write_entire_file("test.out", result.content_size, result.contents);
-            memory->DEBUG_platform_free_file_memory(file_memory);
+            memory->DEBUG_platform_write_entire_file(thread, "test.out", result.content_size, result.contents);
+            memory->DEBUG_platform_free_file_memory(thread, file_memory);
         }
 
         game_state->tone_hz = 256;
@@ -133,15 +133,15 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         if(controller->move_left.ended_down)
         {
             game_state->tone_hz -= 10;
-            game_state->blue_offset -= 10;
-            game_state->player_x -= (int)4.0f*(5);
+            game_state->blue_offset -= 5;
+            game_state->player_x -= (int)4.0f*(2);
         }
 
         if(controller->move_right.ended_down)
         {
             game_state->tone_hz += 10;
-            game_state->blue_offset += 10;
-            game_state->player_x += (int)4.0f*(5);
+            game_state->blue_offset += 5;
+            game_state->player_x += (int)4.0f*(2);
         }
 
         if(controller->action_down.ended_down)
@@ -155,6 +155,16 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
 
     render_gradient(buffer, game_state->blue_offset, game_state->green_offset);
     render_player(buffer, game_state->player_x, game_state->player_y);
+
+    render_player(buffer, input->mouse_x, input->mouse_y);
+
+    for(int button_index = 0;
+        button_index < ArrayCount(input->mouse_buttons);
+        button_index++)
+    if(input->mouse_buttons[button_index].ended_down)
+    {
+        render_player(buffer, 10 + 20 * button_index, 10);
+    }
 }
 
 GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)

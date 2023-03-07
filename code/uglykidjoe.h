@@ -39,6 +39,11 @@ typedef  double real64;
 
 global_variable bool global_running;
 
+typedef struct ThreadContext
+{
+    int place_holder;
+}ThreadContext;
+
 // NOTE: services the platform provides to the game
 #if UGLYKIDJOE_INTERNAL
     typedef struct DEBUG_ReadFileResult
@@ -47,13 +52,13 @@ global_variable bool global_running;
         void *contents;
     }DEBUG_ReadFileResult;
 
-    #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(void *memory)
+    #define DEBUG_PLATFORM_FREE_FILE_MEMORY(name) void name(ThreadContext *thread, void *memory)
     typedef DEBUG_PLATFORM_FREE_FILE_MEMORY(debug_platform_free_file_memory);
 
-    #define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) DEBUG_ReadFileResult name(char *filename)
+    #define DEBUG_PLATFORM_READ_ENTIRE_FILE(name) DEBUG_ReadFileResult name(ThreadContext *thread, char *filename)
     typedef DEBUG_PLATFORM_READ_ENTIRE_FILE(debug_platform_read_entire_file);
 
-    #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(char *filename, uint64 memory_size, void *memory)
+    #define DEBUG_PLATFORM_WRITE_ENTIRE_FILE(name) bool name(ThreadContext *thread, char *filename, uint64 memory_size, void *memory)
     typedef DEBUG_PLATFORM_WRITE_ENTIRE_FILE(debug_platform_write_entire_file);
 
 #endif
@@ -126,6 +131,16 @@ typedef struct GameControllerInput
 
 typedef struct GameInput
 {
+    /*
+        NOTE(me): 
+
+        0 = left button, 
+        1 = rigth button, 
+        2 = middle button
+    */
+    GameButtonState mouse_buttons[5];
+    int32 mouse_x, mouse_y, mouse_z;
+
     GameControllerInput controllers[5];
 }GameInput;
 
@@ -165,11 +180,12 @@ typedef struct GameMemory
 }GameMemory;
 
 
-#define GAME_UPDATE_AND_RENDER(name) void name(GameMemory *memory, GameInput *input, GameOffScreenBuffer *buffer)
+#define GAME_UPDATE_AND_RENDER(name) void name(ThreadContext *thread, GameMemory *memory, GameInput *input, GameOffScreenBuffer *buffer)
 typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 
 // NOTE: keep this function below 1 millisecond
-#define GAME_GET_SOUND_SAMPLES(name) void name(GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
+#define GAME_GET_SOUND_SAMPLES(name) void name(ThreadContext *thread, GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
+
 
 #endif

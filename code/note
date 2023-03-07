@@ -1,0 +1,31 @@
+/*
+    Maddening Sound:
+        lower level library like ALSA or OSS or higher level like SDL.
+
+        Do not know much about either so SDL: 
+            there are two ways you can inplement sound in SDL, either using queue audio or,
+            Using a ring buffer(to give seamless sound with little buffer space):
+
+            The queue audio has some challenges that I'm not sure of now, but I assume one is the sound samples 
+            are queued and the palying is at the mercy of SDL(to some extent), this is easier to implement.
+
+            Using a Ring buffer is harder to implement, but gives more control.
+
+            So Like most things the sdl audio has to be initialized (apart from the top level SDL_Init).
+            sdl uses a struct called sdl_audio_spec to help pass audio data to the sound card
+            it's members are:
+                freq - the sample rate per seconds, kind like frame rate for audio, I use 48000hz.
+                format - the format determines the bit depth. example 8bit, 16bit, e.t.c, could also be little endian or big endian
+                channels - mono(one sound left and rigth), stereo(samples are taken one for left and one for rigth), e.t.c
+                callback - a function you implement, sdl calls this when the sound card needs more samples (opposed to queuing)
+                samples - samples determine the amount of samples taken on each call to your callback function, lower samples give 
+                            less latency higher samples lead to callbacking(for lack of a better word at the moment) less
+                size - buffer size, freq * bytes per sample so 48000 * 4 (16 bit format * 2(stereo))
+                userdata - passed to sdl, for you to do as you wish
+                silence - the value of silence
+
+                the callback is basically a function pointer to your callback function
+                sdl passes: userdata - to whatever you will, pointer to a uint8 to fill with sample data 
+                            length - how many samples to pull
+
+*/

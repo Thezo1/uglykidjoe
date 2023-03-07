@@ -229,9 +229,11 @@ internal real32 SDLProcessGameControllerAxisValue(int16 value, int16 dead_zone_t
 
 internal void SDLProcessKeyPress(GameButtonState *new_state, bool is_down)
 {
-    Assert(new_state->ended_down != is_down);
-    new_state->ended_down = is_down;
-    ++new_state->half_transition_count;
+    if(new_state->ended_down != is_down)
+    {
+        new_state->ended_down = is_down;
+        ++new_state->half_transition_count;
+    }
 }
 
 internal void SDLProcessGameControllerButton(GameButtonState *old_state, GameButtonState *new_state, bool value)
@@ -303,41 +305,64 @@ internal void sdl_get_input_filename(SDL_State *state, int slot_index,
     sdl_build_exe_filepath(state, "looped.ukj", dest_count, dest);
 }
 
+internal void sdl_get_input_file_location(SDL_State *state, bool input_stream, int slot_index, int dest_count, char *dest)
+{
+    char temp[64];
+    sprintf(temp, "loop_edit_%d_%s.ukj", slot_index, input_stream ? "input" : "state");
+    sdl_build_exe_filepath(state, temp, dest_count, dest);
+}
+
+internal SDL_ReplayBuffer *sdl_get_replay_buffer(SDL_State *state, unsigned int index)
+{
+    Assert(index < ArrayCount(state->replay_buffers));
+    SDL_ReplayBuffer *result = &state->replay_buffers[index];
+    return(result);
+}
+
 internal void sdl_begin_recording_input(SDL_State *state, int input_recording_index)
 {
-    state->input_recording_index = input_recording_index;
-    char filename[PATH_MAX] ;
-    sdl_get_input_filename(state, input_recording_index, sizeof(filename), filename);
+    SDL_ReplayBuffer *replay_buffer = sdl_get_replay_buffer(state, input_recording_index);
+    if(replay_buffer->memory_block)
+    {
+        state->input_recording_index = input_recording_index;
+        char filename[PATH_MAX];
+        sdl_get_input_file_location(state, true, input_recording_index, sizeof(filename), filename);
+        state->recording_handle = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
 
-    state->recording_handle = open(filename, O_WRONLY | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);
-
-    // NOTE:(me) Do I need to cast?
-    write(state->recording_handle, state->game_memory_block, state->total_size);
+#if 0
+        lseek(state->recording_handle, state->total_size, SEEK_SET);
+#endif
+        memcpy(replay_buffer->memory_block, state->game_memory_block, state->total_size);
+    }
 }
 
 internal void sdl_end_recording_input(SDL_State *state)
 {
     close(state->recording_handle);
     state->input_recording_index = 0;
-    state->recording_handle = 0;
 }
 
 internal void sdl_begin_input_playback(SDL_State *state, int input_playing_index)
 {
-    state->input_playing_index = input_playing_index;
-    char filename[PATH_MAX] ;
-    sdl_get_input_filename(state, input_playing_index, sizeof(filename), filename);
+    SDL_ReplayBuffer *replay_buffer = sdl_get_replay_buffer(state, input_playing_index);
+    if(replay_buffer->memory_block)
+    {
+        state->input_playing_index = input_playing_index;
+        char filename[PATH_MAX];
+        sdl_get_input_file_location(state, true, input_playing_index, sizeof(filename), filename);
 
-    state->playback_handle = open(filename, O_RDONLY);
-    
-    // NOTE:(me) Do I need to cast?
-    read(state->playback_handle, state->game_memory_block, state->total_size);
+        state->playback_handle = open(filename, O_RDONLY);
+
+#if 0
+        lseek(state->recording_handle, state->total_size, SEEK_SET);
+#endif
+        memcpy(state->game_memory_block, replay_buffer->memory_block, state->total_size);
+    }
 }
 
 internal void sdl_end_input_playback(SDL_State *state)
 {
     close(state->playback_handle);
-    state->playback_handle = 0;
     state->input_playing_index = 0;
 }
 
@@ -450,14 +475,21 @@ internal bool handle_event(SDL_Event *event, SDL_State *state, GameControllerInp
                 {
                     if(is_down)
                     {
-                        if(state->input_recording_index == 0)
+                        if(state->input_playing_index == 0)
                         {
-                            sdl_begin_recording_input(state, 1);
+                            if(state->input_recording_index == 0)
+                            {
+                                sdl_begin_recording_input(state, 1);
+                            }
+                            else
+                            {
+                                sdl_end_recording_input(state);
+                                sdl_begin_input_playback(state, 1);
+                            }
                         }
                         else
                         {
-                            sdl_end_recording_input(state);
-                            sdl_begin_input_playback(state, 1);
+                            sdl_end_input_playback(state);
                         }
                      }
                 }
@@ -668,6 +700,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUG_platform_read_entire_file)
     }
     result.content_size = SafeTruncateUint64(file_status.st_size);
     
+    // TODO(me): change to mmap?
     result.contents = malloc(result.content_size);
     if(!result.contents)
     {
@@ -684,7 +717,7 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUG_platform_read_entire_file)
         uint32 bytes_read = read(FILE, next_byte_location, bytes_to_read);
         if(bytes_read == -1)
         {
-            DEBUG_platform_free_file_memory(result.contents);
+            DEBUG_platform_free_file_memory(thread, result.contents);
             result.content_size = 0;
             result.contents = 0;
             close(FILE);
@@ -755,6 +788,8 @@ internal inline real32 SDL_GetSecondsElapsed(uint64 old_counter, uint64 current_
 {
     return ((real32)(current_counter - old_counter) / (real32)(SDL_GetPerformanceFrequency()));
 }
+
+#if 0
 internal void SDL_DebugDrawVertical(SDL_OffScreenBuffer *global_back_buffer, int x, int top, int bottom, uint32 color)
 {
     uint8* pixel = ((uint8*)((global_back_buffer->memory) + (x*global_back_buffer->bytes_per_pixel) + (top*global_back_buffer->pitch)));
@@ -808,6 +843,7 @@ internal void SDL_DebugSyncDisplay(SDL_OffScreenBuffer *back_buffer,
         SDL_DrawSoundBufferMarker(back_buffer, sound_output, c, pad_x, top, bottom, this_marker->write_cursor, write_color);
     }
 }
+#endif
 
 
 int main(int argc, char *argv[])
@@ -850,15 +886,13 @@ int main(int argc, char *argv[])
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
         if(renderer)
         {
-            SDL_WindowDimensionResult result;
-            result = SDL_GetWindowDimension(window);
             SDL_ResizeTexture(&global_back_buffer, renderer, 640, 640);
 
             int monitor_refresh_rate = SDLGetWindowRefreshRate(window);
             printf("Refresh rate is %d Hz\n", monitor_refresh_rate);
 
             // TODO(me): forces game to update at 30hz try not to hard code the figure
-            int game_update_hz = 30;
+            real32 game_update_hz = (real32)(monitor_refresh_rate) / 2.0f;
             real32 target_seconds_per_frame = 1.0f / (real32)game_update_hz;
 
             int input_recording_index = 0;
@@ -876,7 +910,7 @@ int main(int argc, char *argv[])
 
             // TODO: compute this varience and see what The
             // lowest reasonable value is
-            sound_output.safety_bytes = ((sound_output.samples_per_second*sound_output.bytes_per_sample)/game_update_hz)/3;
+            sound_output.safety_bytes = (int)(((real32)sound_output.samples_per_second*(real32)sound_output.bytes_per_sample)/game_update_hz)/3;
 
             // NOTE: Open audio device
             SDL_InitAudio(48000, sound_output.secondary_buffer_size);
@@ -900,7 +934,7 @@ int main(int argc, char *argv[])
 
             state.total_size = game_memory.permanent_storage_size + game_memory.transient_storage_size;
             state.game_memory_block = mmap(base_address, 
-                                           state.total_size,
+                                           (size_t)state.total_size,
                                            PROT_READ | PROT_WRITE, 
                                            MAP_ANON | MAP_PRIVATE, 
                                            -1, 0);
@@ -908,6 +942,29 @@ int main(int argc, char *argv[])
             Assert(game_memory.permanent_storage);
 
             game_memory.transient_storage = (uint8 *)(game_memory.permanent_storage) + game_memory.transient_storage_size;
+
+            for(int replay_index;
+                replay_index < ArrayCount(state.replay_buffers);
+                replay_index++)
+            {
+                SDL_ReplayBuffer *replay_buffer = &state.replay_buffers[replay_index];
+
+                sdl_get_input_file_location(&state, false, replay_index, sizeof(replay_buffer->replay_filename), replay_buffer->replay_filename);
+
+                replay_buffer->file_handle = open(replay_buffer->replay_filename,
+                         O_RDWR | O_CREAT | O_TRUNC, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH);;
+
+                ftruncate(replay_buffer->file_handle, state.total_size);
+
+                replay_buffer->memory_block = mmap(0, 
+                                                (size_t)state.total_size,
+                                                PROT_READ | PROT_WRITE, 
+                                                MAP_PRIVATE, 
+                                                replay_buffer->file_handle, 0);
+
+                // TODO: Change to log message
+                Assert(replay_buffer->memory_block);
+            }
 
             if (samples && game_memory.permanent_storage && game_memory.transient_storage)
             {
@@ -961,6 +1018,18 @@ int main(int argc, char *argv[])
 
                     if(!global_pause)
                     {
+                        int x, y;
+                        uint32 mouse_button_state;
+                        mouse_button_state = SDL_GetMouseState(&x, &y);
+
+                        new_input->mouse_x = x;
+                        new_input->mouse_y = y;
+                        new_input->mouse_z = 0;
+
+                        SDLProcessKeyPress(&new_input->mouse_buttons[0], (mouse_button_state & SDL_BUTTON(SDL_BUTTON_LEFT)));
+                        SDLProcessKeyPress(&new_input->mouse_buttons[1], (mouse_button_state & SDL_BUTTON(SDL_BUTTON_RIGHT)));
+                        SDLProcessKeyPress(&new_input->mouse_buttons[2], (mouse_button_state & SDL_BUTTON(SDL_BUTTON_MIDDLE)));
+
                         for(int controller_index = 0;
                                 controller_index<MAX_CONTROLLERS;
                                 controller_index++)
@@ -1062,6 +1131,8 @@ int main(int argc, char *argv[])
                             }
                         }
 
+                        ThreadContext thread = {};
+
                         // graphics
                         GameOffScreenBuffer buffer = {};
                         buffer.memory = global_back_buffer.memory;
@@ -1082,7 +1153,7 @@ int main(int argc, char *argv[])
 
                         if(game.update_and_render)
                         {
-                            game.update_and_render(&game_memory, new_input, &buffer);
+                            game.update_and_render(&thread, &game_memory, new_input, &buffer);
                         }
 
                         SDL_LockAudio();
@@ -1095,7 +1166,8 @@ int main(int argc, char *argv[])
                         int byte_to_lock = (sound_output.running_sample_index*sound_output.bytes_per_sample) % sound_output.secondary_buffer_size;
 
                         int expected_sound_bytes_per_frame = 
-                            (sound_output.samples_per_second*sound_output.bytes_per_sample) / game_update_hz;
+                            (int)((real32)(sound_output.samples_per_second*sound_output.bytes_per_sample) / 
+                                    game_update_hz);
 
                         int expected_frame_boundry_byte = audio_ring_buffer.play_cursor + expected_sound_bytes_per_frame;
 
@@ -1139,7 +1211,7 @@ int main(int argc, char *argv[])
                         sound_buffer.samples = samples;
                         if(game.get_sound_samples)
                         {
-                            game.get_sound_samples(&game_memory, &sound_buffer);
+                            game.get_sound_samples(&thread, &game_memory, &sound_buffer);
                         }
 
 #if UGLYKIDJOE_INTERNAL
@@ -1189,7 +1261,7 @@ int main(int argc, char *argv[])
                         last_counter = end_counter;
 
 #if UGLYKIDJOE_INTERNAL
-                        SDL_DebugSyncDisplay(&global_back_buffer, ArrayCount(debug_time_markers), debug_time_markers, debug_time_marker_index, &sound_output, target_seconds_per_frame);
+                        // SDL_DebugSyncDisplay(&global_back_buffer, ArrayCount(debug_time_markers), debug_time_markers, debug_time_marker_index, &sound_output, target_seconds_per_frame);
 #endif
 
                         SDL_UpdateWindow(global_back_buffer, window, renderer);
