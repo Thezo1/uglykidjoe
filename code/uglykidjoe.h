@@ -154,12 +154,6 @@ extern inline GameControllerInput *get_controller(GameInput *input, int controll
     return result;
  }
 
-typedef struct GameState
-{
-    real32 player_x;
-    real32 player_y;
-}GameState;
-
 typedef struct GameMemory
 {
     bool is_initialized;
@@ -183,18 +177,49 @@ typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 #define GAME_GET_SOUND_SAMPLES(name) void name(ThreadContext *thread, GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
 
-typedef struct TileMap
+typedef struct TileChunk
 {
-    int32 count_x;
-    int32 count_y;
-
-    real32 upperleft_x;
-    real32 upperleft_y;
-    real32 tile_width;
-    real32 tile_heigth;
-
     uint32 *tiles;
-}TileMap;
+}TileChunk;
 
+typedef struct World
+{
+    real32 tile_side_in_meters;
+    int32 tile_side_in_pixels;
+    real32 meters_to_pixels;
+
+    int32 chunk_dim;
+    int32 chunk_shift_value;
+    int32 chunk_mask;
+
+    int32 tile_chunk_count_x;
+    int32 tile_chunk_count_y;
+
+    TileChunk *tile_chunks;
+}World;
+
+typedef struct WorldPosition
+{
+    uint32 abs_tile_x;
+    uint32 abs_tile_y;
+
+    // NOTE(): relative to the upper left conner of tile
+    real32 tile_rel_x; 
+    real32 tile_rel_y;
+}WorldPosition;
+
+typedef struct TileChunkPosition
+{
+    uint32 tile_chunk_x;
+    uint32 tile_chunk_y;
+
+    uint32 rel_tile_x;
+    uint32 rel_tile_y;
+}TileChunkPosition;
+
+typedef struct GameState
+{
+    WorldPosition player_p;
+}GameState;
 
 #endif
