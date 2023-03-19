@@ -886,6 +886,8 @@ int main(int argc, char *argv[])
         renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_PRESENTVSYNC);
         if(renderer)
         {
+            // NOTE(): 1000p display mode is 1920x1080 -> 0.5 of that is 960x540
+            // when using cpu
             SDL_ResizeTexture(&global_back_buffer, renderer, 960, 540);
 
             int monitor_refresh_rate = SDLGetWindowRefreshRate(window);
@@ -896,7 +898,6 @@ int main(int argc, char *argv[])
 
             int input_recording_index = 0;
             int input_playing_index = 0;
-            // TODO(me): forces game to update at 30hz try not to hard code the figure
 
             global_running = true;
             
@@ -925,7 +926,7 @@ int main(int argc, char *argv[])
             void *base_address = (void *)(0);
 #endif
             GameMemory game_memory = {};
-            game_memory.permanent_storage_size = MegaBytes(64);
+            game_memory.permanent_storage_size = MegaBytes(256);
             game_memory.transient_storage_size = GigaBytes(1);
 
             game_memory.DEBUG_platform_free_file_memory = DEBUG_platform_free_file_memory;
@@ -943,7 +944,7 @@ int main(int argc, char *argv[])
 
             game_memory.transient_storage = (uint8 *)(game_memory.permanent_storage) + game_memory.transient_storage_size;
 
-            for(int replay_index;
+            for(int replay_index = 0;
                 replay_index < ArrayCount(state.replay_buffers);
                 replay_index++)
             {

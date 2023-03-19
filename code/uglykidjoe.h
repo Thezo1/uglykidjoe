@@ -30,6 +30,8 @@ typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
 
+typedef size_t memory_index;
+
 typedef uint8_t uint8;
 typedef uint16_t uint16;
 typedef uint32_t uint32;
@@ -177,49 +179,35 @@ typedef GAME_UPDATE_AND_RENDER(game_update_and_render);
 #define GAME_GET_SOUND_SAMPLES(name) void name(ThreadContext *thread, GameMemory *memory, GameSoundOutputBuffer *sound_buffer)
 typedef GAME_GET_SOUND_SAMPLES(game_get_sound_samples);
 
-typedef struct TileChunk
+typedef struct MemoryArena
 {
-    uint32 *tiles;
-}TileChunk;
+    memory_index size;
+    memory_index used;
+    uint8 *base;
+}MemoryArena;
 
+#define push_struct(arena, type) (type *)push_size_(arena, sizeof(type))
+#define push_array(arena, count, type) (type *)push_size_(arena, (count)*sizeof(type))
+internal void *push_size_(MemoryArena *arena, memory_index size)
+{
+    Assert((arena->used + size) <= arena->size);
+    void *result = arena->base+arena->used;
+    arena->used += size;
+    return(result);
+}
+
+#include "uglykidjoe_intrinsics.h"
+#include "uglykidjoe_tile.h"
 typedef struct World
 {
-    real32 tile_side_in_meters;
-    int32 tile_side_in_pixels;
-    real32 meters_to_pixels;
-
-    int32 chunk_dim;
-    int32 chunk_shift_value;
-    int32 chunk_mask;
-
-    int32 tile_chunk_count_x;
-    int32 tile_chunk_count_y;
-
-    TileChunk *tile_chunks;
+    TileMap *tilemap;
 }World;
-
-typedef struct WorldPosition
-{
-    uint32 abs_tile_x;
-    uint32 abs_tile_y;
-
-    // NOTE(): relative to the upper left conner of tile
-    real32 tile_rel_x; 
-    real32 tile_rel_y;
-}WorldPosition;
-
-typedef struct TileChunkPosition
-{
-    uint32 tile_chunk_x;
-    uint32 tile_chunk_y;
-
-    uint32 rel_tile_x;
-    uint32 rel_tile_y;
-}TileChunkPosition;
 
 typedef struct GameState
 {
-    WorldPosition player_p;
+    MemoryArena world_arena;
+    World *world;
+    TileMapPosition player_p;
 }GameState;
 
 #endif
