@@ -9,16 +9,16 @@ typedef struct SDL_OffScreenBuffer
 {
     SDL_Texture *texture;
     void *memory;
-    int width;
-    int height;
-    int pitch;
-    int bytes_per_pixel;
+    int32 width;
+    int32 height;
+    int32 pitch;
+    int32 bytes_per_pixel;
 } SDL_OffScreenBuffer;
 
 typedef struct SDL_WindowDimensionResult
 {
-    int width;
-    int heigth;
+    int32 width;
+    int32 heigth;
 }SDL_WindowDimensionResult;
 
 typedef struct RingBuffer

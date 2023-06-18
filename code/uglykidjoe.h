@@ -25,6 +25,27 @@
 #define MAX_CONTROLLERS 4
 #define Pi32 3.14159265358979f
 
+// compilers
+#ifndef COMPILER_GCC
+#define COMPILER_GCC 0
+#endif
+
+#ifndef COMPILER_LLVM
+#define COMPILER_LLVM 0
+#endif
+
+#if !COMPILER_GCC && !COMPILER_LLVM
+#if __GNUC__
+#undef COMPILER_GCC
+#define COMPILER_GCC 1
+#else
+
+#undef COMPILER_LLVM
+#define COMPILER_LLVM 1
+
+#endif
+#endif
+
 typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
@@ -203,11 +224,21 @@ typedef struct World
     TileMap *tilemap;
 }World;
 
+typedef struct LoadedBitMap
+{
+    int32 width;
+    int32 height;
+    uint32 *pixels;
+}LoadedBitMap;
+
 typedef struct GameState
 {
     MemoryArena world_arena;
     World *world;
     TileMapPosition player_p;
+
+    LoadedBitMap bitmap;
+    LoadedBitMap player;
 }GameState;
 
 #endif

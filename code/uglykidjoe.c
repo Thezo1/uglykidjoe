@@ -2,6 +2,127 @@
 #include "uglykidjoe_tile.c"
 #include "uglykidjoe_random.h"
 
+#pragma pack(push, 1)
+typedef struct BitMapHeader
+{
+    uint16   FileType;     
+    uint32  FileSize;     
+    uint16   Reserved1;    
+    uint16   Reserved2;    
+    uint32  BitmapOffset;
+    uint32 Size;
+    int32  Width;
+    int32  Height;
+    uint16  Planes;
+    uint16  BitsPerPixel;
+
+    uint32 Compression;
+	uint32 SizeOfBitmap;
+	int32  HorzResolution;
+	int32  VertResolution; 
+	uint32 ColorsUsed;
+	uint32 ColorsImportant;
+
+    uint32 RedMask;
+    uint32 GreenMask;
+    uint32 BlueMask;
+
+}BitMapHeader;
+#pragma pack(pop)
+
+internal LoadedBitMap DEBUG_load_bmp(ThreadContext *thread, debug_platform_read_entire_file *read_entire_file,
+                             char *filename)
+{
+    LoadedBitMap result = {};
+    DEBUG_ReadFileResult read_result = read_entire_file(thread, filename);
+
+    if(read_result.content_size != 0)
+    {
+        BitMapHeader *header = (BitMapHeader *)read_result.contents;
+        Assert(header->Compression == 3);
+
+        // NOTE(me): Experiment with loading a 24 bits per pixel image
+        // This is a 32 bits per pixel image
+
+        result.pixels = (uint32 *)((uint8 *)read_result.contents + header->BitmapOffset);
+        result.height = header->Height;
+        result.width = header->Width;
+
+        // NOTE: The byte order in memory is decided by the header
+        // so we have to read out the masks and convert the pixels
+        uint32 red_mask = header->RedMask;
+        uint32 green_mask = header->GreenMask;
+        uint32 blue_mask = header->BlueMask;
+        uint32 alpha_mask = ~(red_mask | green_mask | blue_mask);
+
+        BitScanResult red_shift = find_least_significant_set_bit(red_mask);
+        BitScanResult green_shift = find_least_significant_set_bit(green_mask);
+        BitScanResult blue_shift = find_least_significant_set_bit(blue_mask);
+        BitScanResult alpha_shift = find_least_significant_set_bit(alpha_mask);
+
+        Assert(red_shift.found);
+        Assert(green_shift.found);
+        Assert(blue_shift.found);
+        Assert(alpha_shift.found);
+
+        uint32 *source_dest = result.pixels;
+        for(int32 y = 0;
+                y < header->Height;
+                ++y)
+        {
+            for(int32 x = 0;
+                    x < header->Width;
+                    ++x)
+            {
+                uint32 c = *source_dest;
+                *source_dest++ = ((((c >> alpha_shift.index) & 0xFF) << 24) | 
+                                  (((c >> red_shift.index) & 0xFF) << 16) |
+                                  (((c >> green_shift.index) & 0xFF) << 8) |
+                                  (((c >> blue_shift.index) & 0xFF) << 0));
+            }
+        }
+    }
+
+    return(result);
+}
+
+static void game_output_sound(GameSoundOutputBuffer *sound_buffer, int tone_hz)
+{
+    int16 tone_volume = 3000;
+    int wave_period = sound_buffer->samples_per_second/tone_hz;
+
+    int16 *sample_out = sound_buffer->samples;
+    for(int sample_index = 0;
+        sample_index < sound_buffer->sample_count;
+        ++sample_index)
+    {
+
+#if 0
+        real32 sine_value = sinf(game_state->tsine);
+        int16 sample_value = (int16)(sine_value * tone_volume);
+#else
+        int16 sample_value = 0;
+#endif
+        *sample_out++ = sample_value;
+        *sample_out++ = sample_value;
+
+#if 0
+        game_state->tsine += 2.0f*Pi32*1.0f/(real32)wave_period;
+        if(game_state->tsine > 2.0f*Pi32*1.0f)
+        {
+            game_state->tsine -= 2.0f*Pi32*1.0f ;
+        }
+#endif
+    }
+}
+
+internal void initialize_arena(MemoryArena *arena, memory_index size, uint8 *base)
+{
+    arena->size = size;
+    arena->base = base;
+    arena->used = 0;
+}
+
 internal void draw_rectangle(GameOffScreenBuffer *buffer, 
                             real32 real_min_x, real32 real_min_y,
                             real32 real_max_x, real32 real_max_y,
@@ -56,41 +177,73 @@ internal void draw_rectangle(GameOffScreenBuffer *buffer,
     }
 }
 
-static void game_output_sound(GameSoundOutputBuffer *sound_buffer, int tone_hz)
+internal void draw_bitmap(GameOffScreenBuffer *buffer, LoadedBitMap *bitmap, real32 real_x, real32 real_y)
 {
-    int16 tone_volume = 3000;
-    int wave_period = sound_buffer->samples_per_second/tone_hz;
+    int32 min_x = round_real32_to_int32(real_x);
+    int32 min_y = round_real32_to_int32(real_y);
+    int32 max_x = round_real32_to_int32(real_x + bitmap->width);
+    int32 max_y = round_real32_to_int32(real_y + bitmap->height);
 
-    int16 *sample_out = sound_buffer->samples;
-    for(int sample_index = 0;
-        sample_index < sound_buffer->sample_count;
-        ++sample_index)
+    int32 blit_width = bitmap->width;
+    int32 blit_height = bitmap->height;
+
+    if(min_x < 0)
     {
-
-#if 0
-        real32 sine_value = sinf(game_state->tsine);
-        int16 sample_value = (int16)(sine_value * tone_volume);
-#else
-        int16 sample_value = 0;
-#endif
-        *sample_out++ = sample_value;
-        *sample_out++ = sample_value;
-
-#if 0
-        game_state->tsine += 2.0f*Pi32*1.0f/(real32)wave_period;
-        if(game_state->tsine > 2.0f*Pi32*1.0f)
-        {
-            game_state->tsine -= 2.0f*Pi32*1.0f ;
-        }
-#endif
+        min_x = 0;
     }
-}
 
-internal void initialize_arena(MemoryArena *arena, memory_index size, uint8 *base)
-{
-    arena->size = size;
-    arena->base = base;
-    arena->used = 0;
+    if(min_y < 0)
+    {
+        min_y = 0;
+    }
+
+    if(max_x > buffer->width)
+    {
+        max_x = buffer->width;
+    }
+
+    if(max_y > buffer->height)
+    {
+        max_y = buffer->height;
+    }
+
+    // TODO: source_row needs to be changed based on clipping
+    uint32 *source_row = bitmap->pixels + bitmap->width*(bitmap->height - 1);
+    uint8 *dest_row = ((uint8 *)buffer->memory +
+                        min_x*buffer->bytes_per_pixel +
+                        min_y*buffer->pitch);
+    for(int32 y = min_y;
+            y < max_y;
+            y++)
+    {
+        uint32 *dest = (uint32 *)dest_row;
+        uint32 *source = source_row;
+        for(int32 x = min_x;
+                x < max_x;
+                x++)
+        {
+            real32 a = ((*source >> 24) & 0xFF) / 255.0f;
+            real32 sr = ((*source >> 16) & 0xFF);
+            real32 sg = ((*source >> 8) & 0xFF);
+            real32 sb = ((*source >> 0) & 0xFF);
+
+            real32 dr = ((*dest >> 16) & 0xFF);
+            real32 dg = ((*dest >> 8) & 0xFF);
+            real32 db = ((*dest >> 0) & 0xFF);
+
+            real32 r = (1.0f-a)*dr + a*sr;
+            real32 g = (1.0f-a)*dg + a*sg;
+            real32 b = (1.0f-a)*db + a*sb;
+
+            *dest = (((uint32)(r + 0.5f) << 16) | 
+                    ((uint32)(g + 0.5f) << 8) | 
+                    ((uint32)(b + 0.5f) << 0));
+            ++dest;
+            ++source;
+        }
+        dest_row += buffer->pitch;
+        source_row -= bitmap->width;
+    }
 }
 
 GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
@@ -103,6 +256,8 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     GameState *game_state = (GameState *)memory->permanent_storage;
     if(!memory->is_initialized)
     {
+        game_state->bitmap = DEBUG_load_bmp(thread, memory->DEBUG_platform_read_entire_file, "test/background001.bmp");
+        game_state->player = DEBUG_load_bmp(thread, memory->DEBUG_platform_read_entire_file, "test/some0.bmp");
         game_state->player_p.abs_tile_x = 10;
         game_state->player_p.abs_tile_y = 3;
         game_state->player_p.offset_x = 0.0f;
@@ -356,8 +511,10 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
         }
     }
 
+
     draw_rectangle(buffer, 0.0f, 0.0f, (real32)buffer->width, (real32)buffer->height, 
                    1.0f, 0.0f, 0.1f);
+    draw_bitmap(buffer, &game_state->bitmap, 0, 0);
 
     real32 screen_center_x = 0.5f*(real32)buffer->width;
     real32 screen_center_y = 0.5f*(real32)buffer->height;
@@ -373,7 +530,7 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
             uint32 column = game_state->player_p.abs_tile_x + rel_column;
             uint32 row = game_state->player_p.abs_tile_y + rel_row;
             uint32 tile_id = get_tile_value(tilemap, column, row, game_state->player_p.abs_tile_z);
-            if(tile_id > 0)
+            if(tile_id > 1)
             {
                 real32 gray = 0.5f;
                 if(tile_id == 2)
@@ -414,11 +571,8 @@ GAME_UPDATE_AND_RENDER(GameUpdateAndRender)
     real32 player_left = screen_center_x  - 0.5f*meters_to_pixels*player_width;
     real32 player_top = screen_center_y  - meters_to_pixels * player_height;
 
-    draw_rectangle(buffer,
-                   player_left, player_top,
-                   player_left + meters_to_pixels * player_width,
-                   player_top + meters_to_pixels * player_height,
-                   player_r, player_g, player_b);
+    draw_bitmap(buffer, &game_state->player, player_left, player_top);
+
 }
 
 GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
@@ -427,7 +581,6 @@ GAME_GET_SOUND_SAMPLES(GameGetSoundSamples)
 
     game_output_sound(sound_buffer, 400);
 }
-
 
 /*
    static void render_gradient(GameOffScreenBuffer *buffer, int blue_offset, int green_offset)

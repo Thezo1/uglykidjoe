@@ -144,7 +144,7 @@ internal void sdl_unload_game_code(SDL_GameCode *game)
     game->is_valid = false;
 }
 
-internal void SDL_ResizeTexture(SDL_OffScreenBuffer *buffer, SDL_Renderer *renderer, int width, int height)
+internal void SDL_ResizeTexture(SDL_OffScreenBuffer *buffer, SDL_Renderer *renderer, int32 width, int32 height)
 {
     int bytes_per_pixel = 4;
     buffer->bytes_per_pixel = bytes_per_pixel;

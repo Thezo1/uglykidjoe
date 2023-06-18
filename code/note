@@ -29,3 +29,21 @@
                             length - how many samples to pull
 
 */
+
+/*
+    Colour is much more efficient and gives more flexiblity in floating point 
+    in hex it is easier to store.
+*/
+
+/*
+    Linear blending:
+    C = A + T(A-B)
+
+    C is a final colour
+    A is a colour(Red or Blue or Green) of something behind B
+    B is a colour(Red or Blue or Green) of something in front of A
+    T is any number between 0-1
+
+    This equation blends two colours A and B by an amount T(0, 0.5, 1)
+    Linear interpolation
+*/

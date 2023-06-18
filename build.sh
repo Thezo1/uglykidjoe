@@ -5,13 +5,13 @@ set -xe
 mkdir -p ./build
 pushd ./build
 CommonFlags="-Wall -Werror -Wno-write-strings -Wno-unused -DUGLYKIDJOE_INTERNAL=1 -DUGLYKIDJOE_SLOW=1 -DUGLYKDJOE_SDL=1"
-
+# -O2 -O1 -Ofast -Og 
 # Build *so
 # gcc $CommonFlags  ~/Documents/code/c/uglykidjoe/code/uglykidjoe.c -g -shared -o uglykidjoe.so `../code/sdl2-64/bin/sdl2-config --cflags --libs` -lm -Wl,-rpath,'$ORIGIN/x86_64'
 gcc $CommonFlags  ~/Documents/code/c/uglykidjoe/code/uglykidjoe.c -g -shared -o uglykidjoe.so `sdl2-config --cflags --libs` -lm
 # Build for x86_64
 # gcc $CommonFlags ~/Documents/code/c/uglykidjoe/code/sdl_uglykidjoe.c -g -o  uglykidjoe.x86_64 `../code/sdl2-64/bin/sdl2-config --cflags --libs` -lm -Wl,-rpath,'$ORIGIN/x86_64'
-gcc $CommonFlags ~/Documents/code/c/uglykidjoe/code/sdl_uglykidjoe.c -g -o  uglykidjoe.x86_64 `sdl2-config --cflags --libs` -lm
+gcc $CommonFlags ~/Documents/code/c/uglykidjoe/code/sdl_uglykidjoe.c -g -o  uglykidjoe `sdl2-config --cflags --libs` -lm
 
 
 # Build for x86
