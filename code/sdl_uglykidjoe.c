@@ -19,11 +19,6 @@ SDL_GameController *controller_handles[MAX_CONTROLLERS];
 SDL_Haptic *rumble_handles[MAX_CONTROLLERS];
 RingBuffer audio_ring_buffer;
 
-/*
-    TODO:(me) change from sdl audio to a lower level library.
-    ALSA most likely or OSS.
-*/
-
 // NOTE:(me) copied from stack overflow, 
 // so don't ask me how I wrote it.
 internal int copy_file(const char *to, const char *from)
@@ -557,6 +552,7 @@ internal void SDL_OpenGameController()
         {
             break;
         }
+
         controller_handles[controller_index] = SDL_GameControllerOpen(joystick_index);
         rumble_handles[controller_index] = SDL_HapticOpen(joystick_index);
 
@@ -700,11 +696,16 @@ DEBUG_PLATFORM_READ_ENTIRE_FILE(DEBUG_platform_read_entire_file)
     }
     result.content_size = SafeTruncateUint64(file_status.st_size);
     
-    // TODO(me): change to mmap?
-    result.contents = malloc(result.content_size);
+    result.contents = mmap(0, 
+            result.content_size,
+            PROT_READ | PROT_WRITE, 
+            MAP_ANON | MAP_PRIVATE, 
+            -1, 0);
+
     if(!result.contents)
     {
         close(FILE);
+        munmap(result.contents, result.content_size);
         result.content_size = 0;
         result.contents = 0;
         return result;
@@ -746,7 +747,7 @@ DEBUG_PLATFORM_WRITE_ENTIRE_FILE(DEBUG_platform_write_entire_file)
         uint32 bytes_written = write(FILE, next_byte_location, bytes_to_write);
         if(bytes_written == -1)
         {
-            free(memory);
+            munmap(memory, memory_size);
             memory = 0;
             close(FILE);
             return false;
@@ -780,7 +781,12 @@ int SDLGetWindowRefreshRate(SDL_Window *window)
 
 internal inline uint64 SDL_GetWallClock()
 {
+#if 1
     uint64 result = SDL_GetPerformanceCounter();
+#else
+    timespec result = {};
+    clock_gettime(CLOCK_MONOTONIC_RAW);
+#endif
     return (result);
 }
 
@@ -870,6 +876,8 @@ int main(int argc, char *argv[])
         // TODO:(zourt) SDL did not init
     }
 
+    SDL_GameControllerAddMappingsFromFile("gamecontrollerdb.txt");
+
     uint64 perf_count_frequency = SDL_GetPerformanceFrequency();
 
     // Initialise game controllers
@@ -895,6 +903,7 @@ int main(int argc, char *argv[])
 
             real32 game_update_hz = (real32)(monitor_refresh_rate) / 2.0f;
             real32 target_seconds_per_frame = 1.0f / (real32)game_update_hz;
+            printf("Seconds per frame(Target): %fms\n", target_seconds_per_frame);
 
             int input_recording_index = 0;
             int input_playing_index = 0;
@@ -1125,13 +1134,12 @@ int main(int argc, char *argv[])
                                 SDLProcessGameControllerButton(&(old_controller->move_down),
                                                                &(new_controller->move_down),
                                                                new_controller->stick_average_y > threshold);
-
                             }
-
                             else
                             {
                                 //TODO: The contoller is not plugged
                             }
+
                         }
 
                         ThreadContext thread = {};
@@ -1217,18 +1225,6 @@ int main(int argc, char *argv[])
                             game.get_sound_samples(&thread, &game_memory, &sound_buffer);
                         }
 
-#if 0
-                        int unwrapped_write_cursor = audio_ring_buffer.write_cursor;
-                        if(unwrapped_write_cursor < audio_ring_buffer.play_cursor)
-                        {
-                            unwrapped_write_cursor += sound_output.secondary_buffer_size;
-                        }
-                        audio_latency_bytes = unwrapped_write_cursor - audio_ring_buffer.play_cursor;
-                        audio_latency_seconds = (((real32)audio_latency_bytes / (real32)sound_output.bytes_per_sample) / (real32)sound_output.samples_per_second);
-                        printf("bl: %i, bw: %i, play cursor: %i, write cursor: %i, bytes_btwn: %i, sec_bwtn_samps: %fs\n", 
-                               byte_to_lock, bytes_to_write, audio_ring_buffer.play_cursor, audio_ring_buffer.write_cursor, audio_latency_bytes, audio_latency_seconds);
-#endif
-
                         sdl_fill_sound_buffer(&sound_output, byte_to_lock, bytes_to_write, &sound_buffer);
 
                         real32 seconds_elapsed_for_frame = SDL_GetSecondsElapsed(last_counter, SDL_GetWallClock());
@@ -1254,6 +1250,8 @@ int main(int argc, char *argv[])
                         }
                         else
                         {
+                            // Log Took too much time
+                            // printf("Too Slow\n");
                         }
 
                         uint64 end_counter = SDL_GetWallClock();
@@ -1283,7 +1281,6 @@ int main(int argc, char *argv[])
 #endif
 
                         // NOTE(me): try to double check types before typing
-
                         GameInput *temp = new_input;
                         new_input = old_input;
                         old_input = temp;
