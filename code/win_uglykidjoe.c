@@ -1,73 +1,11 @@
 #include<windows.h>
 #include<stdbool.h>
-#include<stdint.h>
+#include<stdio.h>
 #include<xinput.h>
 #include<dsound.h>
 #include<math.h>
 
-#define internal static
-#define local_persist static
-#define global_variable static
-#define Pi32 3.14159265359f
-
-global_variable bool GlobalRunning;
-
-
-typedef uint8_t u8;     // 1-byte long unsigned integer
-typedef uint16_t u16;   // 2-byte long unsigned integer
-typedef uint32_t u32;   // 4-byte long unsigned integer
-typedef uint64_t u64;   // 8-byte long unsigned integer
-
-typedef int8_t i8;      // 1-byte long signed integer
-typedef int16_t i16;    // 2-byte long signed integer
-typedef int32_t i32;    // 4-byte long signed integer
-typedef int64_t i64;    // 8-byte long signed integer
-
-typedef float f32;
-typedef double f64;
-
-typedef struct Win32_OffScreenBuffer
-{
-    BITMAPINFO Info;
-    void *Memory;
-    int Width;
-    int Height;
-    int Pitch;
-    int BytesPerPixel;
-} Win32_OffScreenBuffer;
-
-typedef struct Win32_WindowDimension
-{
-    int Width;
-    int Height;
-} Win32_WindowDimension;
-
-typedef struct Win32_SoundOutput
-{
-    int SamplesPerSecond;
-    int BytesPerSample;
-    int SecondaryBufferSize;
-    u32 RunningSampleIndex;
-    int ToneHz;
-    int ToneVolume;
-    int WavePeriod;
-    f32 TSine;
-    int LatencySampleCount;
-} Win32_SoundOutput;
-
-global_variable Win32_OffScreenBuffer GlobalBackBuffer;
-
-typedef DWORD WINAPI x_input_get_state(DWORD dwUserIndex, XINPUT_STATE *pState);
-typedef DWORD WINAPI x_input_set_state(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration);
-
-#define XInputGetState XInputGetState_ 
-#define XInputSetState XInputSetState_ 
-
-#define X_INPUT_GET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
-#define X_INPUT_SET_STATE(name) DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
-// Define a type of a function
-typedef X_INPUT_GET_STATE(x_input_get_state);
-typedef X_INPUT_SET_STATE(x_input_set_state);
+#include "win_uglykidjoe.h"
 
 X_INPUT_GET_STATE(XInputGetStateStub) 
 { 
@@ -78,9 +16,8 @@ X_INPUT_SET_STATE(XInputSetStateStub)
     return (ERROR_DEVICE_NOT_CONNECTED); 
 }
 
-#define DIRECT_SOUND_CREATE(name) HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS, LPUNKNOWN pUnkOuter)
-typedef DIRECT_SOUND_CREATE(direct_sound_create);
-
+global_variable bool GlobalRunning;
+global_variable Win32_OffScreenBuffer GlobalBackBuffer;
 global_variable x_input_get_state *XInputGetState_ = XInputGetStateStub; 
 global_variable x_input_set_state *XInputSetState_ = XInputSetStateStub;
 global_variable IDirectSoundBuffer *GlobalSecondaryBuffer;
@@ -421,6 +358,10 @@ WinMain(
     Win32LoadXInput();
   
     Win32ResizeDIBSection(&GlobalBackBuffer, 1280, 720);
+    
+    LARGE_INTEGER PerfCountFrequencyResult;
+    QueryPerformanceFrequency(&PerfCountFrequencyResult);
+    i64 PerfCountFrequency = PerfCountFrequencyResult.QuadPart;
   
     WindowClass.style = CS_HREDRAW | CS_VREDRAW ;
     WindowClass.lpfnWndProc = Win32MainWindowCallback;
@@ -455,6 +396,11 @@ WinMain(
 	    int XOffset = 0;
 	    int YOffset = 0;
 	    GlobalRunning = true;
+	    
+	    LARGE_INTEGER LastCounter;
+	    QueryPerformanceCounter(&LastCounter);
+	    u64 LastCycleCount = __rdtsc();
+	    
 	    while(GlobalRunning)
 	    {
 		MSG Message;
@@ -541,9 +487,26 @@ WinMain(
 		    }
 		    Win32FillSoundBuffer(&SoundOutput, ByteToLock, BytesToWrite);
 		}
-		
 		Win32_WindowDimension Dimension = Win32GetWindowDimension(Window);
 		Win32DisplayBufferInWindow(GlobalBackBuffer, DeviceContext, Dimension.Width, Dimension.Height);
+		
+		LARGE_INTEGER EndCounter;
+		QueryPerformanceCounter(&EndCounter);
+		u64 EndCycleCount = __rdtsc();
+		
+		i64 CounterElapsed = EndCounter.QuadPart - LastCounter.QuadPart;
+		i64 CyclesElapsed = EndCycleCount - LastCycleCount;
+		
+		f32 MSPerFrame = (f32)((1000*CounterElapsed) / (f32)PerfCountFrequency);
+		f32 FPS = (f32)PerfCountFrequency / (f32)CounterElapsed;
+		f32 MegaCyclesPerFrame = (f32)CyclesElapsed / (1000.0f * 1000.0f);
+		
+		char Buffer[256];
+		sprintf(Buffer, "%.02fms/f, %.02ff/s, %.02fMc/f\n", MSPerFrame, FPS, MegaCyclesPerFrame);
+		OutputDebugStringA(Buffer);
+		
+		LastCounter = EndCounter;
+		LastCycleCount = EndCycleCount;
 	    }
 	}
 	else
