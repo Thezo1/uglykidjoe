@@ -1,3 +1,0 @@
-[D-BUS Service]
-Name=org.freedesktop.DBus.GLib.TestService
-Exec=@TEST_CORE_SERVICE_BINARY@

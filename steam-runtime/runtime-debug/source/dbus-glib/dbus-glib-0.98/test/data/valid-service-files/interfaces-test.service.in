@@ -1,3 +1,0 @@
-[D-BUS Service]
-Name=org.freedesktop.DBus.GLib.Test.Interfaces
-Exec=@TEST_INTERFACES_SERVICE_BINARY@

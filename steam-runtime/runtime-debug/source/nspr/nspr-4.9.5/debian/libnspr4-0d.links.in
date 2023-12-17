@@ -1,3 +1,0 @@
-usr/lib/@DEB_HOST_MULTIARCH@/libnspr4.so usr/lib/@DEB_HOST_MULTIARCH@/libnspr4.so.0d
-usr/lib/@DEB_HOST_MULTIARCH@/libplc4.so usr/lib/@DEB_HOST_MULTIARCH@/libplc4.so.0d
-usr/lib/@DEB_HOST_MULTIARCH@/libplds4.so usr/lib/@DEB_HOST_MULTIARCH@/libplds4.so.0d

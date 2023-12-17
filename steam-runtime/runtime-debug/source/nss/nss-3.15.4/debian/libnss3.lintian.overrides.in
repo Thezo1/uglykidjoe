@@ -1,5 +1,0 @@
-# These .so symlinks are here for compatibility with other distros and external
-# binaries depending on nspr.
-libnss3: non-dev-pkg-with-shlib-symlink
-# License says GPL 2 or subsequent, so pointing to the latest version is fine
-libnss3: copyright-refers-to-versionless-license-file usr/share/common-licenses/GPL

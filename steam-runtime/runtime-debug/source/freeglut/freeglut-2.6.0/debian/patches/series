@@ -1,4 +1,0 @@
-01_fix_kfreebsd.diff
-03_fix_hurd.diff
-04_ld_no_add_needed.diff
-05_gold.diff

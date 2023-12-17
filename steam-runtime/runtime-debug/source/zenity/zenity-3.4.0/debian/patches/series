@@ -1,3 +1,0 @@
-01_dont_quit_zenity_when_stdin_ends.patch
-git_list_view_segfault.patch
-git_gio_get_flags.patch

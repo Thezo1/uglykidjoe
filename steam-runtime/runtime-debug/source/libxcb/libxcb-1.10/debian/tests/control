@@ -1,2 +1,0 @@
-Tests: build
-Depends: libxcb1-dev, build-essential, pkg-config, xvfb	
