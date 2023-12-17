@@ -1,0 +1,50 @@
+Source: sdl-image1.2
+Maintainer: Debian SDL packages maintainers <pkg-sdl-maintainers@lists.alioth.debian.org>
+Uploaders: Barry deFreese <bdefreese@debian.org>,
+           Aurelien Jarno <aurel32@debian.org>,
+           Felix Geyer <debfx-pkg@fobos.de>
+Section: libs
+Priority: optional
+Build-Depends: debhelper (>= 8.9.0~),
+               libsdl1.2-dev (>= 1.2.10),
+               libjpeg-dev,
+               libpng-dev,
+               libtiff4-dev,
+               zlib1g-dev
+Standards-Version: 3.9.2
+Vcs-Browser: http://anonscm.debian.org/gitweb/?p=pkg-sdl/packages/sdl-image1.2.git
+Vcs-Git: git://anonscm.debian.org/pkg-sdl/packages/sdl-image1.2.git
+DM-Upload-Allowed: yes
+Homepage: http://www.libsdl.org/projects/SDL_image/
+
+Package: libsdl-image1.2
+Architecture: any
+Multi-Arch: same
+Depends: ${shlibs:Depends},
+         ${misc:Depends}
+Pre-Depends: ${misc:Pre-Depends}
+Description: image loading library for Simple DirectMedia Layer 1.2
+ This is a simple library to load images of various formats as SDL surfaces.
+ This library currently supports BMP, PPM, PCX, GIF, JPEG, PNG, TIFF, and XPM
+ formats.
+
+Package: libsdl-image1.2-dev
+Architecture: any
+Multi-Arch: same
+Section: libdevel
+Depends: ${misc:Depends},
+         libsdl-image1.2 (= ${binary:Version}),
+         libc6-dev,
+         libsdl1.2-dev (>= 1.2.10),
+         libjpeg-dev,
+         libpng-dev,
+         libtiff4-dev,
+         zlib1g-dev
+Description: development files for SDL 1.2 image loading libray
+ This is a simple library to load images of various formats as SDL surfaces.
+ This library currently supports BMP, PPM, PCX, GIF, JPEG, PNG, TIFF, and XPM
+ formats.
+ .
+ This package contains the include files and static libraries required to
+ support development using the SDL 1.2 image loading library.
+

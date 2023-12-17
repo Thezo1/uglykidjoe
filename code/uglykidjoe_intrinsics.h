@@ -49,4 +49,11 @@ internal inline BitScanResult find_least_significant_set_bit(uint32 value)
 
     return(result);
 }
+
+inline real32 absolute_value(real32 real_32)
+{
+    real32 result = fabs(real_32);
+    return(result);
+}
+
 #endif

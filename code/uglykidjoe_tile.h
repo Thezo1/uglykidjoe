@@ -42,8 +42,13 @@ typedef struct TileMapPosition
     uint32 abs_tile_z;
 
     // NOTE(): These are the offsets from tile center
-    real32 offset_x; 
-    real32 offset_y;
+    v2 offset; 
 }TileMapPosition;
+
+typedef struct TileMapDifference
+{
+    v2 dxy;
+    real32 dz;
+}TileMapDifference;
 
 #endif

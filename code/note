@@ -38,6 +38,7 @@
 /*
     Linear blending:
     C = A + T(A-B)
+    C = (1-T)A + TB
 
     C is a final colour
     A is a colour(Red or Blue or Green) of something behind B
@@ -46,4 +47,8 @@
 
     This equation blends two colours A and B by an amount T(0, 0.5, 1)
     Linear interpolation
+*/
+
+/*
+    Use Vulkan?
 */

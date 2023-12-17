@@ -1,0 +1,28 @@
+# HG changeset patch
+# Date 1364497268 -14400
+# Node ID 56f01b89d8b8f7e2cbc651dccbd904b45698be24
+# Parent  09c14ca57ff092cd304a4e29f9398176255a72ab
+8007925: Improve cmsStageAllocLabV2ToV4curves
+8007926: Improve cmsPipelineDup
+
+Index: lcms2-2.2+git20110628/src/cmslut.c
+===================================================================
+--- lcms2-2.2+git20110628.orig/src/cmslut.c	2011-06-27 23:20:02.000000000 -0500
++++ lcms2-2.2+git20110628/src/cmslut.c	2013-07-01 10:51:20.000000000 -0500
+@@ -980,6 +980,7 @@
+     mpe = cmsStageAllocToneCurves(ContextID, 3, LabTable);
+     cmsFreeToneCurveTriple(LabTable);
+ 
++    if (mpe == NULL) return mpe;
+     mpe ->Implements = cmsSigLabV2toV4;
+     return mpe;
+ }
+@@ -1291,6 +1292,8 @@
+     if (lut == NULL) return NULL;
+ 
+     NewLUT = cmsPipelineAlloc(lut ->ContextID, lut ->InputChannels, lut ->OutputChannels);  
++    if (NewLUT == NULL) return NULL;
++
+     for (mpe = lut ->Elements; 
+          mpe != NULL; 
+          mpe = mpe ->Next) {

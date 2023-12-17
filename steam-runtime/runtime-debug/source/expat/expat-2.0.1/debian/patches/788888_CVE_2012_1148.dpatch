@@ -1,0 +1,24 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+# Description: Don't leak memory when realloc_fcn() returns NULL
+# Origin: upstream, http://expat.cvs.sourceforge.net/viewvc/expat/expat/lib/xmlparse.c?r1=1.166&r2=1.167
+
+@DPATCH@
+diff -urNad '--exclude=CVS' '--exclude=.svn' '--exclude=.git' '--exclude=.arch' '--exclude=.hg' '--exclude=_darcs' '--exclude=.bzr' expat-2.0.1~/lib/xmlparse.c expat-2.0.1/lib/xmlparse.c
+--- expat-2.0.1~/lib/xmlparse.c	2012-08-09 11:04:40.359131060 -0700
++++ expat-2.0.1/lib/xmlparse.c	2012-08-09 11:05:13.235131840 -0700
+@@ -6119,12 +6119,13 @@
+   }
+   if (pool->blocks && pool->start == pool->blocks->s) {
+     int blockSize = (int)(pool->end - pool->start)*2;
+-    pool->blocks = (BLOCK *)
++    BLOCK *temp = (BLOCK *)
+       pool->mem->realloc_fcn(pool->blocks,
+                              (offsetof(BLOCK, s)
+                               + blockSize * sizeof(XML_Char)));
+-    if (pool->blocks == NULL)
++    if (temp == NULL)
+       return XML_FALSE;
++    pool->blocks = temp;
+     pool->blocks->size = blockSize;
+     pool->ptr = pool->blocks->s + (pool->ptr - pool->start);
+     pool->start = pool->blocks->s;

@@ -1,3 +1,4 @@
+#include "uglykidjoe.h"
 #include "uglykidjoe_tile.h"
 
 internal inline TileChunk *get_tile_chunk(TileMap *tilemap, uint32 tile_chunk_x, uint32 tile_chunk_y, uint32 tile_chunk_z)
@@ -81,6 +82,17 @@ internal uint32 get_tile_value_(TileMap *tilemap, TileMapPosition pos)
     return(tile_chunk_value);
 }
 
+internal bool is_tile_value_empty(uint32 tile_value)
+{
+    bool empty = false;
+    
+    empty = (tile_value == 1) ||
+        (tile_value == 3)||
+        (tile_value == 4);
+
+    return(empty);
+}
+
 internal bool is_tilemap_point_empty(TileMap *tilemap, TileMapPosition pos)
 {
     bool empty = false;
@@ -116,8 +128,8 @@ internal inline TileMapPosition re_cannonicalize_position(TileMap *tilemap, Tile
     TileMapPosition result = pos;
 
     // TODO(me): bug in tilemap_count_x?
-    re_cannocicalize_coord(tilemap, &result.abs_tile_x, &result.offset_x);
-    re_cannocicalize_coord(tilemap, &result.abs_tile_y, &result.offset_y);
+    re_cannocicalize_coord(tilemap, &result.abs_tile_x, &result.offset.x);
+    re_cannocicalize_coord(tilemap, &result.abs_tile_y, &result.offset.y);
 
     return(result);
 }
@@ -148,5 +160,29 @@ internal bool are_on_same_tile(TileMapPosition *a, TileMapPosition *b)
     bool result = ((a->abs_tile_x == b->abs_tile_x) &&
                    (a->abs_tile_y == b->abs_tile_y) &&
                    (a->abs_tile_z == b->abs_tile_z));
+    return(result);
+}
+
+TileMapDifference subtract_in_real32(TileMap *tilemap, TileMapPosition *a, TileMapPosition *b )
+{
+    TileMapDifference result = {};
+    v2 d_tile_xy = V2((real32)a->abs_tile_x - (real32)b->abs_tile_x, (real32)a->abs_tile_y - (real32)b->abs_tile_y);
+
+    real32 d_tile_z = (real32)a->abs_tile_z - (real32)b->abs_tile_z;
+
+    result.dxy = v2_add(v2_scalar_mul(d_tile_xy, tilemap->tile_side_in_meters), v2_sub(a->offset, b->offset));
+    result.dz = tilemap->tile_side_in_meters * d_tile_z;
+
+    return(result);
+}
+
+inline TileMapPosition centered_tile_point(uint32 abs_tile_x, uint32 abs_tile_y, uint32 abs_tile_z)
+{
+    TileMapPosition result;
+
+    result.abs_tile_x = abs_tile_x;
+    result.abs_tile_y = abs_tile_y;
+    result.abs_tile_z = abs_tile_z;
+
     return(result);
 }

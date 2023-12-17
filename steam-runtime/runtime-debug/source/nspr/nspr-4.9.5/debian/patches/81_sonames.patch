@@ -1,0 +1,256 @@
+#! /bin/sh /usr/share/dpatch/dpatch-run
+## 81_sonames.dpatch by Mike Hommey <glandium@debian.org>
+##
+## All lines beginning with `## DP:' are a description of the patch.
+## DP: Add soname support
+
+@DPATCH@
+
+Index: nspr/mozilla/nsprpub/config/rules.mk
+===================================================================
+--- nspr.orig/mozilla/nsprpub/config/rules.mk	2011-08-12 11:50:08.000000000 +0200
++++ nspr/mozilla/nsprpub/config/rules.mk	2011-08-12 11:51:14.512673956 +0200
+@@ -132,6 +132,29 @@
+ else
+ ifdef MKSHLIB
+ SHARED_LIBRARY	= $(OBJDIR)/lib$(LIBRARY_NAME)$(LIBRARY_VERSION).$(DLL_SUFFIX)
++SONAME		= $(notdir $(SHARED_LIBRARY))
++
++ifdef SO_VERSION
++ifneq (,$(findstring $(SONAME),$(MKSHLIB)))
++SO_VERSION_MAJOR	:= $(shell echo $(SO_VERSION) | sed 's/^\([^.]*\)\(\.[^.]*\)\?\(\.[^.]*\)\?/\1/')
++SO_VERSION_MINOR	:= $(shell echo $(SO_VERSION) | sed 's/^\([^.]*\)\(\.[^.]*\)\?\(\.[^.]*\)\?/\2/')
++SO_VERSION_MICRO	:= $(shell echo $(SO_VERSION) | sed 's/^\([^.]*\)\(\.[^.]*\)\?\(\.[^.]*\)\?/\3/')
++
++SHARED_LIBRARY_LINKS	:= $(SONAME)
++ifdef SO_VERSION_MINOR
++SHARED_LIBRARY_LINKS	+= $(SONAME).$(SO_VERSION_MAJOR)
++endif
++ifdef SO_VERSION_MICRO
++SHARED_LIBRARY_LINKS	+= $(SHARED_LIBRARY).$(SO_VERSION_MAJOR)$(SO_VERSION_MINOR)
++endif
++
++SONAME			:= $(SONAME).$(SO_VERSION_MAJOR)
++SHARED_LIBRARY		:= $(SHARED_LIBRARY).$(SO_VERSION)
++
++MKSHLINKS		= (cd $(1) && for link in $(SHARED_LIBRARY_LINKS); do rm -f $$link; ln -s $(notdir $(SHARED_LIBRARY)) $$link; done)
++endif
++endif
++
+ endif
+ endif
+ 
+@@ -165,7 +188,7 @@
+ endif
+ 
+ ALL_TRASH		= $(TARGETS) $(OBJS) $(RES) $(filter-out . .., $(OBJDIR)) LOGS TAGS $(GARBAGE) \
+-			  $(NOSUCHFILE) \
++			  $(SHARED_LIBRARY_LINKS) $(NOSUCHFILE) \
+ 			  so_locations
+ 
+ ifndef RELEASE_LIBS_DEST
+@@ -215,6 +238,7 @@
+ endif
+ ifdef RELEASE_LIBS
+ 	$(NSINSTALL) -t -m 0755 $(RELEASE_LIBS) $(DESTDIR)$(libdir)/$(lib_subdir)
++	$(call MKSHLINKS,$(DESTDIR)$(libdir)/$(lib_subdir))
+ endif
+ 	+$(LOOP_OVER_DIRS)
+ 
+@@ -325,6 +349,8 @@
+ endif
+ endif
+ 
++$(SHARED_LIBRARY_LINKS): %: $(SHARED_LIBRARY)
++
+ $(SHARED_LIBRARY): $(OBJS) $(RES) $(MAPFILE)
+ 	@$(MAKE_OBJDIR)
+ 	rm -f $@
+@@ -354,6 +380,7 @@
+ endif	# MOZ_PROFILE_GENERATE
+ else	# WINNT && !GCC
+ 	$(MKSHLIB) $(OBJS) $(RES) $(LDFLAGS) $(EXTRA_LIBS)
++	$(call MKSHLINKS,.)
+ endif	# WINNT && !GCC
+ endif	# AIX 4.1
+ ifdef ENABLE_STRIP
+Index: nspr/mozilla/nsprpub/configure.in
+===================================================================
+--- nspr.orig/mozilla/nsprpub/configure.in	2011-08-12 11:50:34.000000000 +0200
++++ nspr/mozilla/nsprpub/configure.in	2011-08-12 11:51:36.656635307 +0200
+@@ -1192,7 +1192,7 @@
+     PR_MD_CSRCS=linux.c
+     MKSHLIB='$(CC) $(DSO_LDOPTS) $(WRAP_MALLOC_LIB) -o $@'
+     DSO_CFLAGS=-fPIC
+-    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(notdir $@)'
++    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(SONAME)'
+     _OPTIMIZE_FLAGS=-O2
+     _DEBUG_FLAGS="-g -fno-inline"  # most people on linux use gcc/gdb, and that
+                                    # combo is not yet good at debugging inlined
+@@ -1278,7 +1278,7 @@
+         AC_DEFINE(_PR_STAT_HAS_ST_ATIMESPEC)
+         MKSHLIB='$(CC) -o $@ $(DSO_LDOPTS)'
+         DSO_CFLAGS=-fPIC
+-        DSO_LDOPTS='-shared -Wl,-soname,$(@:$(OBJDIR)/%.so=%.so)'
++        DSO_LDOPTS='-shared -Wl,-soname,$(SONAME)'
+         STRIP="$STRIP -d"
+         case "$target_os" in
+         bsdi4.2* | bsdi4.3* | bsdi5.*)
+@@ -1478,7 +1478,7 @@
+     fi
+     MKSHLIB='$(CC) $(DSO_LDOPTS) -o $@'
+     DSO_CFLAGS=-fPIC
+-    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(notdir $@)'
++    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(SONAME)'
+     MDCPUCFG_H=_freebsd.cfg
+     PR_MD_CSRCS=freebsd.c
+     ;;
+@@ -1493,7 +1493,7 @@
+     # workaround this problem.
+     AC_DEFINE(_PR_POLL_WITH_SELECT)
+     AC_DEFINE(_USE_BIG_FDS)
+-    DSO_LDOPTS='-b +h $(notdir $@)'
++    DSO_LDOPTS='-b +h $(SONAME)'
+     PR_MD_CSRCS=hpux.c
+     if test "$OS_TEST" = "ia64"; then
+         DLL_SUFFIX=so
+@@ -1750,7 +1750,7 @@
+     PR_MD_CSRCS=linux.c
+     MKSHLIB='$(CC) $(DSO_LDOPTS) $(WRAP_MALLOC_LIB) -o $@'
+     DSO_CFLAGS=-fPIC
+-    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(notdir $@)'
++    DSO_LDOPTS='-shared -Wl,-soname -Wl,$(SONAME)'
+     _OPTIMIZE_FLAGS=-O2
+     _DEBUG_FLAGS="-g -fno-inline"  # most people on linux use gcc/gdb, and that
+                                    # combo is not yet good at debugging inlined
+@@ -2087,7 +2087,7 @@
+         else
+             OBJECT_FMT=ELF
+             DLL_SUFFIX=so
+-            DSO_LDOPTS='-shared -Wl,-soname,$(notdir $@)'
++            DSO_LDOPTS='-shared -Wl,-soname,$(SONAME)'
+         fi
+     fi
+ 
+@@ -2133,7 +2133,7 @@
+     AC_DEFINE(HAVE_POINTER_LOCALTIME_R)
+     MDCPUCFG_H=_nto.cfg
+     PR_MD_CSRCS=nto.c
+-    MKSHLIB='$(CC) $(DSO_LDOPTS) -Wl,-soname -Wl,$(notdir $@) -o $@'
++    MKSHLIB='$(CC) $(DSO_LDOPTS) -Wl,-soname -Wl,$(SONAME) -o $@'
+     DSO_CFLAGS=-fPIC
+     DSO_LDOPTS=-shared
+     OS_LIBS="$OS_LIBS -lsocket"
+@@ -2196,7 +2196,7 @@
+     if echo $OS_RELEASE | grep -c V4.0 >/dev/null; then
+         AC_DEFINE(OSF1V4_MAP_PRIVATE_BUG)
+     fi
+-    DSO_LDOPTS='-shared -all -expect_unresolved "*" -soname $(notdir $@)'
++    DSO_LDOPTS='-shared -all -expect_unresolved "*" -soname $(SONAME)'
+     MDCPUCFG_H=_osf1.cfg
+     PR_MD_CSRCS=osf1.c
+     ;;
+@@ -2263,7 +2263,7 @@
+         _OPTIMIZE_FLAGS='-O -F Olimit,4000'
+     fi
+ 
+-    DSO_LDOPTS='-G -z defs -h $(@:$(OBJDIR)/%.so=%.so)'
++    DSO_LDOPTS='-G -z defs -h $(SONAME)'
+ 
+     if test "$OS_RELEASE" = "5.43"; then
+         AC_DEFINE(IP_MULTICAST)
+@@ -2328,13 +2328,13 @@
+         if `$CC -print-prog-name=ld` -v 2>&1 | grep -c GNU >/dev/null; then
+             GCC_USE_GNU_LD=1
+         fi
+-        DSO_LDOPTS='-shared -Wl,-h,$(notdir $@),-z,combreloc,-z,defs,-z,ignore' 
++        DSO_LDOPTS='-shared -Wl,-h,$(SONAME),-z,combreloc,-z,defs,-z,ignore' 
+         if test -n "$USE_B_DIRECT"; then
+             DSO_LDOPTS="$DSO_LDOPTS,-Bdirect"
+         fi
+     else
+         DSO_CFLAGS=-KPIC
+-        DSO_LDOPTS='-G -h $(notdir $@) -z combreloc -z defs -z ignore'
++        DSO_LDOPTS='-G -h $(SONAME) -z combreloc -z defs -z ignore'
+         if test -n "$USE_B_DIRECT"; then
+             DSO_LDOPTS="$DSO_LDOPTS -Bdirect"
+         fi
+Index: nspr/mozilla/nsprpub/lib/ds/Makefile.in
+===================================================================
+--- nspr.orig/mozilla/nsprpub/lib/ds/Makefile.in	2011-08-12 11:49:04.000000000 +0200
++++ nspr/mozilla/nsprpub/lib/ds/Makefile.in	2011-08-12 11:51:14.512673956 +0200
+@@ -122,6 +122,7 @@
+ 
+ LIBRARY_NAME	= plds
+ LIBRARY_VERSION	= $(MOD_MAJOR_VERSION)
++SO_VERSION	= 0d
+ 
+ RELEASE_HEADERS = $(HEADERS)
+ RELEASE_HEADERS_DEST = $(RELEASE_INCLUDE_DIR)
+@@ -176,11 +177,13 @@
+ export:: $(TARGETS)
+ 	$(INSTALL) -m 444 $(HEADERS) $(dist_includedir)
+ 	$(INSTALL) -m 444 $(TARGETS) $(dist_libdir)
++	$(call MKSHLINKS,$(dist_libdir))
+ ifdef SHARED_LIBRARY
+ ifeq ($(OS_ARCH),HP-UX)
+ 	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(dist_libdir)
+ 	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(dist_bindir)
+ else
+ 	$(INSTALL) -m 444 $(SHARED_LIBRARY) $(dist_bindir)
++	$(call MKSHLINKS,$(dist_bindir))
+ endif
+ endif
+Index: nspr/mozilla/nsprpub/lib/libc/src/Makefile.in
+===================================================================
+--- nspr.orig/mozilla/nsprpub/lib/libc/src/Makefile.in	2011-08-12 11:49:04.000000000 +0200
++++ nspr/mozilla/nsprpub/lib/libc/src/Makefile.in	2011-08-12 11:51:14.516673947 +0200
+@@ -68,6 +68,7 @@
+ 
+ LIBRARY_NAME	= plc
+ LIBRARY_VERSION	= $(MOD_MAJOR_VERSION)
++SO_VERSION	= 0d
+ 
+ RELEASE_LIBS = $(TARGETS)
+ 
+@@ -177,11 +178,13 @@
+ 
+ export:: $(TARGETS)
+ 	$(INSTALL) -m 444 $(TARGETS) $(dist_libdir)
++	$(call MKSHLINKS,$(dist_libdir))
+ ifdef SHARED_LIBRARY
+ ifeq ($(OS_ARCH),HP-UX)
+ 	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(dist_libdir)
+ 	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(dist_bindir)
+ else
+ 	$(INSTALL) -m 444 $(SHARED_LIBRARY) $(dist_bindir)
++	$(call MKSHLINKS,$(dist_bindir))
+ endif
+ endif
+Index: nspr/mozilla/nsprpub/pr/src/Makefile.in
+===================================================================
+--- nspr.orig/mozilla/nsprpub/pr/src/Makefile.in	2011-08-12 11:49:04.000000000 +0200
++++ nspr/mozilla/nsprpub/pr/src/Makefile.in	2011-08-12 11:51:14.516673947 +0200
+@@ -321,6 +321,7 @@
+ 
+ LIBRARY_NAME = nspr
+ LIBRARY_VERSION = $(MOD_MAJOR_VERSION)
++SO_VERSION = 0d
+ 
+ RELEASE_LIBS = $(TARGETS)
+ 
+@@ -394,12 +395,14 @@
+ 
+ build:: $(TARGETS)
+ 	$(INSTALL) -m 444 $(TARGETS) $(dist_libdir)
++	$(call MKSHLINKS,$(dist_libdir))
+ ifdef SHARED_LIBRARY
+ ifeq ($(OS_ARCH),HP-UX)
+ 	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(dist_libdir)
+ 	$(INSTALL) -m 755 $(SHARED_LIBRARY) $(dist_bindir)
+ else
+ 	$(INSTALL) -m 444 $(SHARED_LIBRARY) $(dist_bindir)
++	$(call MKSHLINKS,$(dist_bindir))
+ endif
+ endif
+ 

@@ -1,0 +1,21 @@
+Description: Make warning about deprecation of ffmpeg clearer.
+Author: Andres Mejia <amejia@debian.org>
+Origin: Debian
+Forwarded: not-needed
+
+--- a/ffmpeg.c
++++ b/ffmpeg.c
+@@ -4376,9 +4376,10 @@
+ 
+     show_banner();
+ 
+-    av_log(NULL, AV_LOG_WARNING, "This program is not developed anymore and is only "
+-                                 "provided for compatibility. Use avconv instead "
+-                                 "(see Changelog for the list of incompatible changes).\n");
++    av_log(NULL, AV_LOG_WARNING, "*** THIS PROGRAM IS DEPRECATED ***\n"
++                                 "This program is only provided for compatibility "
++                                 "and will be removed in a future release. Please "
++                                 "use avconv instead.\n");
+ 
+     /* parse options */
+     parse_options(NULL, argc, argv, options, opt_output_file);

@@ -217,6 +217,7 @@ internal void *push_size_(MemoryArena *arena, memory_index size)
     return(result);
 }
 
+#include "uglykidjoe_math.h"
 #include "uglykidjoe_intrinsics.h"
 #include "uglykidjoe_tile.h"
 typedef struct World
@@ -231,14 +232,41 @@ typedef struct LoadedBitMap
     uint32 *pixels;
 }LoadedBitMap;
 
+typedef struct HeroineBitmaps
+{
+    int32 align_x;
+    int32 align_y;
+
+    LoadedBitMap base;
+    LoadedBitMap cape;
+    LoadedBitMap weapon;
+}HeroineBitmaps;
+
+typedef struct Entity
+{
+    bool exists;
+    TileMapPosition p;
+    v2 dp;
+
+    real32 width;
+    real32 height;
+} Entity;
+
 typedef struct GameState
 {
     MemoryArena world_arena;
     World *world;
-    TileMapPosition player_p;
+    
+    uint32 camera_following_entity_index;
+    TileMapPosition camera_p;
 
-    LoadedBitMap bitmap;
-    LoadedBitMap player;
+    uint32 entity_count;
+    uint32 player_index_for_controller[ArrayCount(((GameInput *)0)->controllers)];
+    Entity entities[256];
+    
+    LoadedBitMap background;
+    HeroineBitmaps heroine_bitmaps[1];
 }GameState;
+
 
 #endif

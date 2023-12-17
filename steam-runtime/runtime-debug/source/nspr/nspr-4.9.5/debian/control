@@ -1,0 +1,104 @@
+Source: nspr
+Section: libs
+Priority: optional
+Maintainer: Ubuntu Mozilla Team <ubuntu-mozillateam@lists.ubuntu.com>
+XSBC-Original-Maintainer: Maintainers of Mozilla-related packages <pkg-mozilla-maintainers@lists.alioth.debian.org>
+Uploaders: Mike Hommey <glandium@debian.org>
+Build-Depends: debhelper (>= 8.1.3), autotools-dev, dpkg-dev (>= 1.15.4)
+Standards-Version: 3.9.2.0
+Homepage: http://www.mozilla.org/projects/nspr/
+XS-Debian-Vcs-Git: git://git.debian.org/git/pkg-mozilla/nspr.git
+XS-Debian-Vcs-Browser: http://git.debian.org/?p=pkg-mozilla/nspr.git
+
+Package: libnspr4
+Architecture: any
+Pre-Depends: ${misc:Pre-Depends}
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Replaces: libnspr4-0d (<< 4.8.7)
+Conflicts: libnspr4-0d (<< 4.8.7),
+	evolution-documentation-en,
+	evolution-documentation-cs,
+	evolution-documentation-de,
+	evolution-documentation-el,
+	evolution-documentation-es,
+	evolution-documentation-fr,
+	evolution-documentation-mk,
+	evolution-documentation-oc,
+	evolution-documentation-ru,
+	evolution-documentation-sv,
+	language-support-translations-en,
+	language-support-translations-cs,
+	language-support-translations-de,
+	language-support-translations-el,
+	language-support-translations-es,
+	language-support-translations-fr,
+	language-support-translations-mk,
+	language-support-translations-oc,
+	language-support-translations-ru,
+	language-support-translations-sv
+Breaks: evolution-plugins (<< 3.2.0-0ubuntu2)
+Multi-Arch: ${misc:Multi-Arch}
+Description: NetScape Portable Runtime Library
+ This library provides platform independent non-GUI operating system
+ facilities including:
+  * threads,
+  * thread synchronisation,
+  * normal file I/O and network I/O,
+  * interval timing and calendar time,
+  * basic memory management (malloc and free),
+  * shared library linking.
+
+Package: libnspr4-dev
+Section: libdevel
+Architecture: any
+Depends: ${misc:Depends}, libnspr4 (>= ${source:Upstream-Version}), libnspr4 (<= ${source:Version}.1~)
+Description: Development files for the NetScape Portable Runtime library
+ This library provides platform independent non-GUI operating system
+ facilities including:
+  * threads,
+  * thread synchronisation,
+  * normal file I/O and network I/O,
+  * interval timing and calendar time,
+  * basic memory management (malloc and free),
+  * shared library linking.
+ .
+ Install this package if you wish to develop your own programs using the
+ NetScape Portable Runtime library.
+
+Package: libnspr4-dbg
+Section: debug
+Priority: extra
+Architecture: any
+Depends: libnspr4 (= ${binary:Version}), ${misc:Depends}
+Conflicts: libnspr4-0d-dbg (<< 4.8.7)
+Replaces: libnspr4-0d-dbg
+Multi-Arch: ${misc:Multi-Arch}
+Description: Debugging symbols for the NetScape Portable Runtime library
+ This library provides platform independent non-GUI operating system
+ facilities including:
+  * threads,
+  * thread synchronisation,
+  * normal file I/O and network I/O,
+  * interval timing and calendar time,
+  * basic memory management (malloc and free),
+  * shared library linking.
+ .
+ This package provides the debugging symbols for the library.
+
+Package: libnspr4-0d
+Section: libs
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, libnspr4 (= ${binary:Version})
+Pre-Depends: ${misc:Pre-Depends}
+Multi-Arch: ${misc:Multi-Arch}
+Description: NetScape Portable Runtime Library
+ This library provides platform independent non-GUI operating system
+ facilities including:
+  * threads,
+  * thread synchronisation,
+  * normal file I/O and network I/O,
+  * interval timing and calendar time,
+  * basic memory management (malloc and free),
+  * shared library linking.
+ .
+ This package contains versions symbolic links for Debian compatbility

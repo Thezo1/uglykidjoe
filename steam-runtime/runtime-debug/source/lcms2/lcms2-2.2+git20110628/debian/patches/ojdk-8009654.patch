@@ -1,0 +1,40 @@
+# HG changeset patch
+# User bae
+# Date 1364538631 -14400
+# Node ID 8718da8c36f3c265f4ee3a3410ed7e9b116283a7
+# Parent  cc656d61e7135d43cd8908a8ef8ceae66ca0d462
+8009654: Improve stability of cmsnamed
+
+Index: lcms2-2.2+git20110628/src/cmsnamed.c
+===================================================================
+--- lcms2-2.2+git20110628.orig/src/cmsnamed.c	2013-07-01 11:43:05.000000000 -0500
++++ lcms2-2.2+git20110628/src/cmsnamed.c	2013-07-01 11:44:10.000000000 -0500
+@@ -488,8 +488,10 @@
+     while (v -> Allocated < n)
+         GrowNamedColorList(v);
+ 
+-    strncpy(v ->Prefix, Prefix, sizeof(v ->Prefix));
+-    strncpy(v ->Suffix, Suffix, sizeof(v ->Suffix));
++    strncpy(v ->Prefix, Prefix, sizeof(v ->Prefix) - 1);
++    strncpy(v ->Suffix, Suffix, sizeof(v ->Suffix) - 1);
++    v->Prefix[sizeof(v ->Prefix) - 1] = v->Suffix[sizeof(v ->Suffix) - 1] = 0;
++
+     v -> ColorantCount = ColorantCount;
+ 
+     return v;
+@@ -543,10 +545,12 @@
+     for (i=0; i < 3; i++)
+         NamedColorList ->List[NamedColorList ->nColors].PCS[i] = PCS == NULL ? 0 : PCS[i];
+ 
+-    if (Name != NULL)
++    if (Name != NULL) {
+         strncpy(NamedColorList ->List[NamedColorList ->nColors].Name, Name, 
+-                    sizeof(NamedColorList ->List[NamedColorList ->nColors].Name));
+-    else
++                    sizeof(NamedColorList ->List[NamedColorList ->nColors].Name) - 1);
++        NamedColorList ->List[NamedColorList ->nColors].
++            Name[sizeof(NamedColorList ->List[NamedColorList ->nColors].Name) - 1] = 0;
++    } else
+         NamedColorList ->List[NamedColorList ->nColors].Name[0] = 0;
+ 
+ 
